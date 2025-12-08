@@ -1,0 +1,718 @@
+---
+title: "Clustering LD phenotypique based"
+format: html
+editor: visual
+---
+```{r}
+library(data.table)
+library(ggplot2)
+library(caret)
+library(nnet)
+library(pls)
+```
+
+
+# import des datas
+```{r}
+data(Phenotype)
+data(Genomic)
+data("localisation")
+```
+
+
+```{r}
+pheno <- as.data.table(Phenotype)
+loc_df<- as.data.table(localisation)
+geno<- as.data.table(Genomic)
+
+pheno[, ID := rownames(Phenotype)]
+
+merged<- merge(pheno, loc_df, by = "ID")
+```
+# LM (Pheno ~ population )
+```{r}
+
+df <- as.data.table(merged)
+
+phenos <- names(df)[sapply(df, is.numeric)]
+phenos <- setdiff(phenos, c("class_index","Lat","Lgn","Elev","ID"))  
+
+get_r2 <- function(var) {
+  form<- as.formula(paste(var, "~ Population + Elev + Lat + Lgn "))
+  mod<- lm(form, data = df)
+  summary(mod)$r.squared
+}
+
+r2_values<- data.table(
+  phenotype = phenos,
+  r2= sapply(phenos, get_r2)
+
+)
+```
+
+
+
+```{r}
+
+ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
+  geom_point(size = 3) +
+  geom_segment(aes(x = phenotype, xend = phenotype, y = 0, yend = r2)) +
+  coord_flip() +
+  ylab("R² lm(Phénotype ~ Population)") +
+  xlab("Caractère phénotypique") +
+  theme_minimal()
+```
+
+
+# PLS : Phenotype ~ all SNP 
+
+```{r}
+
+# Préparation des donnée
+
+y <- pheno$CIRC2009  
+y <- as.numeric(y)
+X <- as.matrix(geno)  
+
+# Split stratifié 
+# Ici, on fait un split simple car phénotype continu
+train_index <- createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[train_index, ]
+X_test  <- X[-train_index, ]
+y_train <- y[train_index]
+y_test  <- y[-train_index]
+```
+
+
+```{r}
+#  PLS 
+
+pls_model <- plsr(y_train ~ X_train, ncomp = 20, validation = "CV")
+```
+
+```{r}
+y_pred <- predict(pls_model, newdata = X_test, ncomp = 3)
+
+# Evaluation 
+R2_test <- cor(y_test, y_pred)^2
+cat("R² sur l'ensemble de test :", round(R2_test, 3), "\n")
+
+RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+cat("RMSEP sur l'ensemble de test :", round(RMSE_test, 3), "\n")
+```
+
+
+```{r}
+
+y_pred_vec <- as.vector(y_pred)
+
+plot_df <- data.frame(
+  Observed = y_test,
+  Predicted = y_pred_vec,
+  Population = merged$Population[-train_index]
+)
+
+ggplot(plot_df, aes(x = Observed, y = Predicted, color = Population)) +
+  geom_point(alpha = 0.7, size = 2) +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Performance PLS : Observé vs Prédit",
+       subtitle = paste("R² =", round(cor(plot_df$Observed, plot_df$Predicted)^2, 3)),
+       x = "Phénotype Observé",
+       y = "Phénotype Prédit",
+       color = "Population") +
+  theme(plot.title = element_text(face = "bold", size = 14),
+        plot.subtitle = element_text(size = 12),
+        legend.position = "right")
+```
+
+
+```{r}
+weights_comp1 <- pls_model$loading.weights[, 1]
+
+weights_abs <- abs(weights_comp1)
+
+top20_idx <- order(weights_abs, decreasing = TRUE)[1:20]
+top20_snps <- rownames(pls_model$loading.weights)[top20_idx]
+top20_values <- weights_comp1[top20_idx]
+
+data.frame(SNP = top20_snps, Weight = top20_values)
+
+```
+
+```{r}
+hist(weights_comp1, breaks = seq(min(weights_comp1), max(weights_comp1), length.out = 50),
+     main = "Distribution des poids de la 1ère composante",
+     xlab = "Poids de chargement", col = "lightblue", border = "white")
+```
+
+
+# PLS Subset SNP 
+
+
+```{r}
+library(pls)
+library(caret)
+library(data.table)
+library(ggplot2)
+
+set.seed(123)
+
+# Paramètres
+n_iter <- 100
+subset_sizes <- c(1000, 5000, 10000, 20000, 30000, 50000) 
+ncomp <- 4
+
+results <- data.frame(
+  subset_size = integer(),
+  iter = integer(),
+  R2 = numeric(),
+  RMSE = numeric()
+)
+
+# Split train/test
+train_index <- createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[train_index, ]
+X_test  <- X[-train_index, ]
+y_train <- y[train_index]
+y_test  <- y[-train_index]
+
+# Boucle sur les tailles de sous-ensembles
+for(n_snps in subset_sizes){
+  cat("Taille de subset :", n_snps, "\n")
+  
+  for(i in 1:n_iter){
+    # Tirage aléatoire de SNP
+    snp_cols <- sample(colnames(X_train), n_snps)
+    
+    X_train_sub <- X_train[, snp_cols]
+    X_test_sub  <- X_test[, snp_cols]
+    
+    pls_model <- plsr(y_train ~ X_train_sub, ncomp = ncomp)
+    
+    y_pred <- predict(pls_model, newdata = X_test_sub, ncomp = ncomp)
+    
+    R2_test <- cor(y_test, y_pred)^2
+    RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+    
+    results <- rbind(results, data.frame(
+      subset_size = n_snps,
+      iter = i,
+      R2 = R2_test,
+      RMSE = RMSE_test
+    ))
+  }
+}
+```
+
+
+```{r}
+# Boxplot R²
+ggplot(results, aes(x = factor(subset_size), y = R2, fill = factor(subset_size))) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "R² selon la taille du sous-ensemble de SNP",
+       x = "Nombre de SNP",
+       y = "R²") +
+  scale_fill_brewer(palette = "Set2") +
+  theme(legend.position = "none")
+
+# Boxplot RMSE
+ggplot(results, aes(x = factor(subset_size), y = RMSE, fill = factor(subset_size))) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "RMSE selon la taille du sous-ensemble de SNP",
+       x = "Nombre de SNP",
+       y = "RMSE") +
+  scale_fill_brewer(palette = "Set2") +
+  theme(legend.position = "none")
+
+
+```
+```{r}
+set.seed(123)
+
+# Paramètres
+n_iter <- 100
+subset_sizes <- c(1000, 5000, 10000, 50000)  # tailles des sous-ensembles
+ncomp_candidates <- 1:5  
+
+results <- data.frame(
+  subset_size = integer(),
+  iter = integer(),
+  ncomp_opt = integer(),
+  R2 = numeric(),
+  RMSE = numeric()
+)
+
+# Split train/test
+train_index <- createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[train_index, ]
+X_test  <- X[-train_index, ]
+y_train <- y[train_index]
+y_test  <- y[-train_index]
+
+for(n_snps in subset_sizes){
+  cat("Taille de subset :", n_snps, "\n")
+  
+  for(i in 1:n_iter){
+    # Tirage aléatoire de SNP
+    snp_cols<- sample(colnames(X_train), n_snps)
+    
+    X_train_sub<-X_train[, snp_cols]
+    X_test_sub<-X_test[, snp_cols]
+    
+    pls_model <- plsr(y_train ~ X_train_sub, ncomp = max(ncomp_candidates), validation = "CV", segments = 3)
+    bestncomp = selectNcomp(pls_model,method="onesigma") +1 
+    y_pred <- predict(pls_model,  newdata = X_test_sub, ncomp = bestncomp)
+    
+    R2_test <- cor(y_test, y_pred)^2
+    RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+    
+    results <- rbind(results, data.frame(
+      subset_size = n_snps,
+      iter= i,
+      ncomp_opt= bestncomp,
+      R2 = R2_test,
+      RMSE=RMSE_test
+    ))
+  }
+}
+```
+
+
+```{r}
+# Boxplots
+ggplot(results, aes(x = factor(subset_size), y = R2, fill = factor(subset_size))) +
+  geom_boxplot() + theme_minimal() +
+  labs(title = "R² selon la taille du sous-ensemble de SNP", x = "Nombre de SNP", y = "R² sur l'échantillon test") +
+  scale_fill_brewer(palette = "Set2") + theme(legend.position = "none")
+
+ggplot(results, aes(x = factor(subset_size), y = RMSE, fill = factor(subset_size))) +
+  geom_boxplot() + theme_minimal() +
+  labs(title = "RMSEP selon la taille du sous-ensemble de SNP", x = "Nombre de SNP", y = "RMSEP") +
+  scale_fill_brewer(palette = "Set2") + theme(legend.position = "none")
+```
+```{r}
+results$subset_size <- as.factor(results$subset_size)
+summary(results)
+```
+```{r}
+setDT(results)
+compact_summary <- results[
+  , {
+      stats <- function(x) {
+        c(
+          Min      = min(x, na.rm = TRUE),
+          Q1       = quantile(x, 0.25, na.rm = TRUE),
+          Median   = median(x, na.rm = TRUE),
+          Mean     = mean(x, na.rm = TRUE),
+          SD       = sd(x, na.rm = TRUE),
+          Q3       = quantile(x, 0.75, na.rm = TRUE),
+          Max      = max(x, na.rm = TRUE)
+        )
+      }
+      
+      data.table(
+        Statistic = names(stats(iter)),
+        iter      = stats(iter),
+        ncomp_opt = stats(ncomp_opt),
+        R2        = stats(R2),
+        RMSE      = stats(RMSE)
+      )
+    },
+  by = subset_size
+]
+
+compact_summary
+```
+# PLS Subset SNP | calcul de VIP | nested CV 
+
+
+```{r}
+library(pls)
+library(data.table)
+library(caret)
+library(foreach)
+library(doParallel)
+library(progressr)
+```
+
+
+
+```{r}
+set.seed(123)
+# Paramètres
+n_iter <- 400
+subset_size <- 10000     # nombre de SNP aléatoires par itération
+ncomp_candidates <- 1:5  # candidats pour ncomp
+nfold_outer <- 5
+nfold_inner <- 10
+```
+
+
+```{r}
+# --- Données ---
+y <- pheno$CIRC2009
+y <- as.numeric(y)
+X <- as.matrix(geno)
+```
+
+
+
+```{r}
+# Fonction pour calculer les VIP 
+calc_vip <- function(pls_model) {
+  W <- pls_model$loading.weights
+  SSY <- colSums(pls_model$Yscores^2)
+  p <- nrow(W)
+  A <- ncol(W)
+  vip <- numeric(p)
+  for (j in 1:p) {
+    vip[j] <- sqrt(p * sum(SSY * (W[j, ]^2)) / sum(SSY))
+  }
+  names(vip) <- rownames(W)
+  return(vip)
+}
+```
+
+```{r}
+# Préparer cluster parallèle
+n_cores <- parallel::detectCores() - 2
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+
+# --- Pipeline principal ---
+
+out <- foreach(i = 1:n_iter, .packages = c("pls","caret","data.table")) %dopar% {
+
+  # 1) Tirage aléatoire SNP
+  snp_cols <- sample(colnames(X), subset_size)
+  X_sub <- X[, snp_cols]
+
+  # 2) Split en folds externes
+  folds <- createFolds(y, k = nfold_outer, list = TRUE)
+
+  # Tables locales
+  perf_list <- list()
+  vip_list  <- list()
+
+  for(f in seq_len(nfold_outer)) {
+
+    test_idx  <- folds[[f]]
+    train_idx <- setdiff(seq_len(nrow(X_sub)), test_idx)
+
+    X_train <- X_sub[train_idx, ]
+    y_train <- y[train_idx]
+    X_test  <- X_sub[test_idx, ]
+    y_test  <- y[test_idx]
+
+    # 3) Sélection ncomp via CV interne
+    pls_cv <- plsr(y_train ~ X_train,
+                   ncomp = max(ncomp_candidates),
+                   validation = "CV",
+                   segments = nfold_inner)
+
+    best_ncomp <- selectNcomp(pls_cv, method = "onesigma") + 1
+
+    # Ajustement final
+    pls_model <- plsr(y_train ~ X_train, ncomp = best_ncomp)
+
+    # 4) Performance test
+    y_pred <- predict(pls_model, newdata = X_test, ncomp = best_ncomp)
+    R2_test  <- cor(y_test, y_pred)^2
+    RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+
+    # 5) VIP
+    vip <- calc_vip(pls_model)
+
+    # 6) Stockage séparé
+
+    # performances fold-level
+    perf_list[[f]] <- data.table(
+      iter = i,
+      fold = f,
+      ncomp = best_ncomp,
+      R2_test = R2_test,
+      RMSE_test = RMSE_test
+    )
+
+    # VIP SNP-level
+    vip_list[[f]] <- data.table(
+      SNP = names(vip),
+      VIP = as.numeric(vip),
+      iter = i,
+      fold = f
+    )
+  }
+
+  list(
+    perf = rbindlist(perf_list),
+    vip  = rbindlist(vip_list)
+  )
+}
+
+stopCluster(cl)
+
+# Reconstruction finale dans l'ordre
+results_perf <- rbindlist(lapply(out, `[[`, "perf"))
+results_vip  <- rbindlist(lapply(out, `[[`, "vip"))
+
+```
+
+```{r}
+results_perf
+vip_perf<- results_perf[, .(R2_test_mean = mean(R2_test)), by = iter]
+vip_perf_fold<- results_perf[, .(R2_test_mean = mean(R2_test)), by = fold]
+```
+```{r}
+ggplot(results_perf[1:1000,], aes(x = factor(iter), y = R2_test)) +
+  geom_violin(fill = "skyblue", color = "black") +
+  labs(x = "Itération", y = expression(R^2), title = "R² 10-outer-fold ") +
+  theme_minimal()
+```
+```{r}
+mean(vip_perf_fold$R2_test_mean)
+```
+
+```{r}
+vip_perf_fold
+```
+
+```{r}
+library(data.table)
+library(ggplot2)
+
+
+# Calcul du VIP moyen par SNP
+vip_mean<- results_vip[, .(VIP_mean = mean(VIP),SNP_count = .N), by = SNP]
+```
+
+
+```{r}
+# Sélection des 30 SNP ayant le VIP moyen le plus élevé
+topN<- vip_mean[order(-VIP_mean)][0:5000, SNP]
+
+df_topNPLS<- results_vip[SNP %in% topN]
+df_topNPLS <- merge(df_topNPLS, vip_mean[, .(SNP, SNP_count)], by = "SNP")
+df_topNPLS$SNP_count <- df_topNPLS$SNP_count/10
+
+```
+
+
+```{r}
+ggplot(df_topNPLS, aes(x = reorder(SNP,VIP), y = VIP, fill = SNP_count)) +
+  geom_violin(trim = FALSE) +
+  geom_boxplot(width = 0.1, outlier.size = 0.5) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+  ) +
+  labs(
+    x = "SNP",
+    y = "VIP",
+    title = "Distribution du VIP pour les n = 50 SNP les plus importants",
+    fill = "Nbr de selection du SNP"
+  )
+```
+
+
+```{r}
+hist(vip_mean$VIP_mean, breaks = seq(min(vip_mean$VIP_mean), max(vip_mean$VIP_mean), length.out = 50),
+     main = "Distribution des scores VIP moyens",
+     xlab = "scores VIP moyens", col = "lightblue", border = "white")
+```
+# Lasso 
+
+```{r}
+library(glmnet)
+
+# Assurer que y est numérique et X est une matrice
+y <- as.numeric(pheno$CIRC2009)
+X <- as.matrix(geno)
+
+train_index <- createDataPartition(y, p = 0.9, list = FALSE)
+X_train <- X[train_index, ]
+X_test  <- X[-train_index, ]
+y_train <- y[train_index]
+y_test  <- y[-train_index]
+
+# Ajustement du Lasso avec validation croisée pour choisir lambda
+set.seed(123) # pour reproductibilité
+cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1, nfolds = 10)
+
+# Afficher la meilleure valeur de lambda
+best_lambda <- cv_lasso$lambda.min
+print(best_lambda)
+
+# Tracer l'erreur de validation croisée
+plot(cv_lasso)
+
+# Ajuster le modèle final avec lambda optimal
+lasso_model <- glmnet(X_train, y_train, alpha = 1, lambda = best_lambda)
+
+# Extraire les coefficients
+coef(lasso_model)
+```
+
+```{r}
+y_pred <- predict(lasso_model, newx = X_test)
+
+# Calcul du R²
+SSE <- sum((y_test - y_pred)^2)           # somme des carrés des erreurs
+SST <- sum((y_test - mean(y))^2)         # somme totale des carrés
+R2 <- 1 - SSE/SST
+
+R2
+```
+
+
+```{r}
+coef_df <- data.frame(
+  SNP = rownames(coef(lasso_model)),
+  Coefficient = as.numeric(coef(lasso_model))
+)
+coef_nonzero <- coef_df[coef_df$Coefficient != 0, ]
+coef_nonzero_dt <- as.data.table(coef_nonzero)
+
+# Top N SNP par valeur absolue des coefficients
+N <- 50
+coef_nonzero_dt[, abs_coef := abs(Coefficient)]
+topN_Lasso <- coef_nonzero_dt[order(-abs_coef)][1:N, .(SNP, Coefficient)]
+
+topN_Lasso
+```
+
+# Comparaison selection Lasso et PLS 
+
+```{r}
+
+common_snps <- intersect(df_topNPLS$SNP, coef_nonzero$SNP)
+
+# SNP communs
+common_snps
+length(common_snps)
+
+```
+# réegression ridge adaptative
+
+```{r}
+y <- as.numeric(pheno$CIRC2009)
+X <- as.matrix(geno)
+
+# Split externe train/test
+set.seed(123)
+train_index <- createDataPartition(y, p = 0.9, list = FALSE)
+X_train <- X[train_index, ]
+X_test  <- X[-train_index, ]
+y_train <- y[train_index]
+y_test  <- y[-train_index]
+
+# Split interne du train en D1 et D2 : 50/50
+set.seed(123)
+idx_D1 <- createDataPartition(y_train, p = 0.5, list = FALSE)
+
+X_D1 <- X_train[idx_D1, ]
+X_D2 <- X_train[-idx_D1, ]
+y_D1 <- y_train[idx_D1]
+y_D2 <- y_train[-idx_D1]
+```
+
+
+
+
+### STEP I : SCREENING (Elastic Net sur D1)
+
+
+
+```{r}
+set.seed(123)
+cv_enet <- cv.glmnet(
+  X_D1, y_D1,
+  alpha = 0.5,               # Elastic Net
+  nfolds = 10,
+  standardize = TRUE
+)
+
+lambda_hat <- cv_enet$lambda.min
+
+# Ajustement final Elastic Net sur D1
+enet_model <- glmnet(X_D1, y_D1, alpha = 0.5, lambda = lambda_hat)
+
+# En variables sélectionnées : support
+coefs <- coef(enet_model)
+selected <- which(coefs[-1] != 0)          # indices des SNP sélectionnés
+S_hat <- selected
+
+cat("Nombre de variables sélectionnées (screening):", length(S_hat), "\n")
+
+# Poids dérivés des coefficients Elastic Net
+beta_hat <- as.numeric(coefs[-1])
+weights <- abs(beta_hat)
+weights <- weights[S_hat]
+weights <- weights / max(weights)          # normalisation
+```
+
+
+
+## STEP II : CLEANING (Ridge sur D2)
+
+
+
+```{r}
+X_D2_sel <- X_D2[, S_hat, drop = FALSE]
+
+# Pondération Ridge : mettre plus de pénalité sur les petites β_EN
+ridge_penalty <- 1 / (weights + 1e-6)
+
+set.seed(123)
+cv_ridge <- cv.glmnet(
+  X_D2_sel, y_D2,
+  alpha = 0,                     # alpha = 0 → Ridge
+  nfolds = 10,
+  penalty.factor = ridge_penalty
+)
+
+lambda_ridge <- cv_ridge$lambda.min
+
+# Ajustement final sur D2
+ridge_model <- glmnet(
+  X_D2_sel, y_D2,
+  alpha = 0,
+  lambda = lambda_ridge,
+  penalty.factor = ridge_penalty
+)
+
+# Coefficients ridge finaux (sur D2)
+beta_clean <- coef(ridge_model)
+```
+
+
+
+# STEP III : REFIT FINAL SUR D = D1 ∪ D2 (train complet)
+
+
+
+```{r}
+X_train_sel <- X_train[, S_hat, drop = FALSE]
+
+ridge_final <- glmnet(
+  X_train_sel, y_train,
+  alpha = 0,
+  lambda = lambda_ridge,
+  penalty.factor = ridge_penalty
+)
+
+# Prédictions sur le test externe
+X_test_sel <- X_test[, S_hat, drop = FALSE]
+y_pred <- predict(ridge_final, newx = X_test_sel)
+
+# R² externe
+R2_test <- 1 - sum((y_test - y_pred)^2) / sum((y_test - mean(y_test))^2)
+cat("R2 externe :", R2_test, "\n")
+```
+
+
+
+

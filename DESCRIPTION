@@ -1,0 +1,26 @@
+Package: PoplarOmicsORL
+Title: Multi-Omics and Phenotypic Data for Populus trichocarpa Genotypes Planted in Orléans
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Jean", "Rouxel", , "jean.rouxel@inrae.fr", role = c("aut", "cre")),
+    person("Alexandre", "Duplan", , "alexandre.duplan@inrae.fr", role = "aut"))
+Description: This package provides multi-omics and phenotypic data for 199 genotypes of 
+ Populus trichocarpa, originating from various locations across Western Europe and grown 
+ in a common garden experiment in Orléans, France.
+ .
+ The dataset includes:
+ - A SNP matrix with 1,217,000 markers,
+ - DNA methylation data in CG, CHG, and CHH sequence contexts,
+ - Transcriptomic expression levels for 25,819 genes,
+ - A data frame of 20 phenotypic traits related to growth, wood chemistry, and disease resistance.
+ .
+ This resource enables integrative analyses in statistical genomics, systems biology, 
+ and quantitative trait mapping for forest tree research.
+License: GPL (>= 3)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends: 
+    R (>= 3.5)
+LazyData: true
+LazyDataCompression: xz
