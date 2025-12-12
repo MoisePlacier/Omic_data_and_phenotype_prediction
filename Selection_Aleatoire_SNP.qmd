@@ -1,0 +1,294 @@
+---
+title: "Selection_Aleatoire_SNP"
+format: html
+editor: visual
+---
+
+```{r}
+library(data.table)
+library(ggplot2)
+library(caret)
+library(nnet)
+library(pls)
+library(FactoMineR)
+library(qqman)
+library(mixOmics)
+library(foreach)
+library(doParallel)
+library(progressr)
+
+```
+
+# import des datas
+```{r}
+data(Phenotype)
+data(Genomic)
+data("localisation")
+
+pheno <- as.data.table(Phenotype)
+loc_df<- as.data.table(localisation)
+geno<- as.data.table(Genomic)
+geno[, ID := rownames(Genomic)]
+pheno[, ID := rownames(Phenotype)]
+
+merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
+merged<- merge(merged, geno, by = "ID")
+```
+
+# PLS : Phenotype ~ all SNP 
+
+```{r}
+
+# Préparation des donnée
+
+y <- merged$CIRC2009  
+y <- as.numeric(y)
+X <- as.matrix(merged[,23:217022])
+
+# Split stratifié 
+# Ici, on fait un split simple car phénotype continu
+train_index <- createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[train_index, ]
+X_test  <- X[-train_index, ]
+y_train <- y[train_index]
+y_test  <- y[-train_index]
+```
+
+
+```{r}
+#  PLS 
+
+pls_model <- plsr(y_train ~ X_train, ncomp = 5, validation = "CV")
+```
+
+```{r}
+bestncomp <- selectNcomp(pls_model, method = "onesigma",plot = TRUE)
+bestncomp
+```
+
+```{r}
+y_pred <- predict(pls_model, newdata = X_test, ncomp = 4)
+
+# Evaluation 
+R2_test <- cor(y_test, y_pred)^2
+cat("R² sur l'ensemble de test :", round(R2_test, 3), "\n")
+
+RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+cat("RMSEP sur l'ensemble de test :", round(RMSE_test, 3), "\n")
+```
+
+
+```{r}
+
+y_pred_vec <- as.vector(y_pred)
+
+plot_df <- data.frame(
+  Observed = y_test,
+  Predicted = y_pred_vec,
+  Population = merged$Population[-train_index]
+)
+
+ggplot(plot_df, aes(x = Observed, y = Predicted, color = Population)) +
+  geom_point(alpha = 0.7, size = 2) +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Performance PLS : Observé vs Prédit",
+       subtitle = paste("R² =", round(cor(plot_df$Observed, plot_df$Predicted)^2, 3)),
+       x = "Phénotype Observé",
+       y = "Phénotype Prédit",
+       color = "Population") +
+  theme(plot.title = element_text(face = "bold", size = 14),
+        plot.subtitle = element_text(size = 12),
+        legend.position = "right")
+```
+
+
+
+# PLS Subset SNP 
+
+
+
+
+```{r}
+y <- merged$CIRC2009  
+y <- as.numeric(y)
+X <- as.matrix(merged[,23:217022])
+```
+
+
+
+
+
+```{r}
+dir.create("results_random_SNP_PLS", showWarnings = FALSE)
+n_cores <- parallel::detectCores() - 2
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+
+set.seed(123)
+
+n_iter <- 50
+subset_sizes <- c(100, 500, 1000, 5000, 10000, 50000)
+ncomp_candidates <- c(2, 3)   
+
+outer_folds <- createFolds(y, k = 10, returnTrain = TRUE)
+
+results <- foreach(
+  n_snps = subset_sizes,
+  .combine = rbind,
+  .packages = c("pls", "caret")
+) %:% foreach(
+  i = 1:n_iter,
+  .combine = rbind,
+  .packages = c("pls", "caret")
+) %dopar% {
+
+  snp_cols <- sample(colnames(X), n_snps)
+  X_sub <- X[, snp_cols]
+
+  res_local <- data.frame()
+
+  for(f in 1:10){
+
+    train_index <- outer_folds[[f]]
+    test_index  <- setdiff(seq_len(nrow(X_sub)), train_index)
+
+    X_train <- X_sub[train_index, ]
+    X_test  <- X_sub[test_index, ]
+    y_train <- y[train_index]
+    y_test  <- y[test_index]
+
+    # inner split
+    inner_train_index <- createDataPartition(y_train, p = 0.9, list = FALSE)
+    inner_X_train <- X_train[inner_train_index, ]
+    inner_X_test  <- X_train[-inner_train_index, ]
+    inner_y_train <- y_train[inner_train_index]
+    inner_y_test  <- y_train[-inner_train_index]
+
+    df_inner_train <- data.frame(y = inner_y_train, inner_X_train)
+
+    # modèle ncomp = 2
+    PLS2 <- plsr(
+      y ~ ., data = df_inner_train,
+      ncomp = 2, validation = "none"
+    )
+    y_pred2 <- as.vector(predict(PLS2,
+                                 newdata = data.frame(inner_X_test),
+                                 ncomp = 2))
+    RMSE_inner_test_2 <- sqrt(mean((inner_y_test - y_pred2)^2))
+
+    # modèle ncomp = 3
+    PLS3 <- plsr(
+      y ~ ., data = df_inner_train,
+      ncomp = 3, validation = "none"
+    )
+    y_pred3 <- as.vector(predict(PLS3,
+                                 newdata = data.frame(inner_X_test),
+                                 ncomp = 3))
+    RMSE_inner_test_3 <- sqrt(mean((inner_y_test - y_pred3)^2))
+
+    # sélection n comp optimal sans une procédure CV complète ... 
+    if (RMSE_inner_test_2 < RMSE_inner_test_3) {
+      ncomp_opt <- 2
+    } else {
+      ncomp_opt <- 3
+    }
+
+    # refit final
+    df_train <- data.frame(y = y_train, X_train)
+    pls_final <- plsr(
+      y ~ ., data = df_train,
+      ncomp = ncomp_opt,
+      validation = "none"
+    )
+
+    y_pred <- as.vector(predict(pls_final,
+                                newdata = data.frame(X_test),
+                                ncomp = ncomp_opt))
+
+    R2_test <- cor(y_test, y_pred)^2
+    RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+
+    res_local <- rbind(
+      res_local,
+      data.frame(
+        subset_size = n_snps,
+        iter = i,
+        outer_fold = f,
+        ncomp_opt = ncomp_opt,
+        R2 = R2_test,
+        RMSE = RMSE_test
+      )
+    )
+  }
+
+        # Sauvegarde disque
+      file_i <- sprintf("results_random_SNP_PLS/res_%s_%s.rds", n_snps, i)
+      saveRDS(res_local, file_i)
+
+      # Retourne un objet minimal (= chemin)
+      data.frame(file = file_i)
+}
+
+stopCluster(cl)
+
+```
+```{r}
+stopCluster(cl)
+```
+
+
+```{r}
+# Récupérer tous les fichiers .rds dans le dossier
+files <- list.files("results_random_SNP_PLS", pattern = "\\.rds$", full.names = TRUE)
+
+# Lire tous les fichiers et combiner en une seule table
+results <- rbindlist(lapply(files, readRDS))
+
+# Vérifier
+head(results)
+```
+
+
+```{r}
+# Boxplots
+ggplot(results, aes(x = factor(subset_size), y = R2, fill = factor(subset_size))) +
+  geom_boxplot() + theme_minimal() +
+  labs(title = "R² selon la taille du sous-ensemble de SNP", x = "Nombre de SNP", y = "R² sur l'échantillon test") +
+  scale_fill_brewer(palette = "Set2") + theme(legend.position = "none")
+
+ggplot(results, aes(x = factor(subset_size), y = RMSE, fill = factor(subset_size))) +
+  geom_boxplot() + theme_minimal() +
+  labs(title = "RMSEP selon la taille du sous-ensemble de SNP", x = "Nombre de SNP", y = "RMSEP") +
+  scale_fill_brewer(palette = "Set2") + theme(legend.position = "none")
+```
+
+```{r}
+setDT(results)
+compact_summary <- results[
+  , {
+      stats <- function(x) {
+        c(
+          Min      = min(x, na.rm = TRUE),
+          Q1       = quantile(x, 0.25, na.rm = TRUE),
+          Median   = median(x, na.rm = TRUE),
+          Mean     = mean(x, na.rm = TRUE),
+          SD       = sd(x, na.rm = TRUE),
+          Q3       = quantile(x, 0.75, na.rm = TRUE),
+          Max      = max(x, na.rm = TRUE)
+        )
+      }
+      
+      data.table(
+        Statistic = names(stats(iter)),
+        iter      = stats(iter),
+        ncomp_opt = stats(ncomp_opt),
+        R2        = stats(R2),
+        RMSE      = stats(RMSE)
+      )
+    },
+  by = subset_size
+]
+
+compact_summary
+```

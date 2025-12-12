@@ -1,3 +1,9 @@
 .Rproj.user
 /data
 data
+.rds
+*.rds
+
+results_random_VIP_PLS/
+
+results_random_SNP_PLS/
