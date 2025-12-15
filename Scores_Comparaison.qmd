@@ -1,0 +1,42 @@
+---
+title: "Scores_Comparaison"
+format: html
+editor: visual
+---
+
+# Scores VIP 
+```{r}
+SAVE_DIR <- "Scripts/results_random_VIP_PLS"
+# tous fichiers de performance 
+perf_files <- list.files(path = SAVE_DIR, pattern = "^perf_s5000.*\\.rds$", full.names = TRUE)
+results_perf <- rbindlist(lapply(perf_files, readRDS))
+
+# tous les fichiers VIP 
+vip_files <- list.files(path = SAVE_DIR, pattern = "^vip_s5000.*\\.rds$", full.names = TRUE)
+results_vip <- rbindlist(lapply(vip_files, readRDS))
+
+vip_mean <- results_vip[, .(VIP_mean = mean(VIP, na.rm = TRUE), 
+                            SNP_count = .N,
+                            SNP_max_size = max(subset_size)), 
+                        by = SNP]
+```
+
+# Scores Importance 
+
+```{r}
+SAVE_DIR_RF <- "results_random_RF"
+imp_all <- rbindlist(
+  lapply(list.files(SAVE_DIR_RF, pattern = "imp_RF", full.names = TRUE), readRDS)
+)
+
+rf_summary <- imp_all[, .(
+  mean_imp = mean(abs(importance), na.rm = TRUE),
+  sd_imp   = sd(importance, na.rm = TRUE),
+  freq     = .N
+), by = SNP]
+head(rf_summary)
+```
+```{r}
+head(rf_summary)
+```
+

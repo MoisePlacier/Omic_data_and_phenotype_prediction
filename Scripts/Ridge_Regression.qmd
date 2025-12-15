@@ -1,0 +1,341 @@
+---
+title: "Ridge_Regression"
+format: html
+editor: visual
+---
+
+```{r}
+library(pls)
+library(caret)
+library(data.table)
+library(parallel)
+library(doParallel)
+library(data.table)
+library(ggplot2)
+library(nnet)
+library(pls)
+library(FactoMineR)
+library(qqman)
+library(mixOmics)
+library(glmnet)
+```
+
+```{r}
+run_ridge_nested_cv <- function(
+  X,
+  y,
+  K_outer = 5,
+  K_inner = 5,
+  seed = 123,
+  standardize = TRUE
+) {
+  
+  stopifnot(nrow(X) == length(y))
+  
+  set.seed(seed)
+  
+  library(caret)
+  library(glmnet)
+  
+  # Création des folds externes
+  outer_folds <- createFolds(y, k = K_outer, returnTrain = TRUE)
+  
+  results <- data.frame(
+    outer_fold = integer(),
+    lambda_opt = numeric(),
+    R2 = numeric(),
+    RMSE = numeric()
+  )
+  
+  for (f in seq_len(K_outer)) {
+    
+    message("Outer fold: ", f, "/", K_outer)
+    
+    # Split externe
+    train_idx <- outer_folds[[f]]
+    test_idx  <- setdiff(seq_along(y), train_idx)
+    
+    X_train <- X[train_idx, , drop = FALSE]
+    X_test  <- X[test_idx, , drop = FALSE]
+    y_train <- y[train_idx]
+    y_test  <- y[test_idx]
+    
+    # CV interne pour le choix du lambda
+    cv_inner <- cv.glmnet(
+      x = X_train,
+      y = y_train,
+      alpha = 0,                # Ridge
+      nfolds = K_inner,
+      standardize = standardize
+    )
+    
+    lambda_opt <- cv_inner$lambda.min
+    
+    # Modèle final entraîné sur tout le train externe
+    ridge_final <- glmnet(
+      x = X_train,
+      y = y_train,
+      alpha = 0,
+      lambda = lambda_opt,
+      standardize = standardize
+    )
+    
+    # Prédictions sur le test externe
+    y_pred <- as.vector(predict(ridge_final, newx = X_test))
+    
+    R2_test <- cor(y_test, y_pred)^2
+    RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+    
+    results <- rbind(
+      results,
+      data.frame(
+        outer_fold = f,
+        lambda_opt = lambda_opt,
+        R2 = R2_test,
+        RMSE = RMSE_test
+      )
+    )
+  }
+  
+  return(results)
+}
+
+```
+
+# Ridge regression sur le dataset complet !
+
+```{r}
+load("Phenotype")
+load("Genomic")
+load("localisation")
+
+pheno <- as.data.table(Phenotype)
+loc_df <- as.data.table(localisation)
+geno <- as.data.table(Genomic)
+geno[, ID := rownames(Genomic)]
+pheno[, ID := rownames(Phenotype)]
+merged <- merge(pheno, loc_df[, list(Population, ID)], by = "ID")
+merged <- merge(merged, geno, by = "ID")
+
+# Y : Phénotype, X : Matrice de SNP
+y <- merged$CIRC2009
+y <- as.numeric(y)
+X <- as.matrix(merged[, 23:ncol(merged)])
+```
+
+
+
+```{r}
+res_ridge <- run_ridge_nested_cv(
+  X = X,
+  y = y,
+  K_outer = 10,
+  K_inner = 5,
+  seed = 123
+)
+```
+
+
+# Ridge sur la selection à partir du score VIP !
+
+```{r}
+SAVE_DIR <- "results_random_VIP_PLS"
+# tous fichiers de performance 
+perf_files <- list.files(path = SAVE_DIR, pattern = "^perf_s5000.*\\.rds$", full.names = TRUE)
+results_perf <- rbindlist(lapply(perf_files, readRDS))
+
+# tous les fichiers VIP 
+vip_files <- list.files(path = SAVE_DIR, pattern = "^vip_s5000.*\\.rds$", full.names = TRUE)
+results_vip <- rbindlist(lapply(vip_files, readRDS))
+
+vip_mean <- results_vip[, .(VIP_mean = mean(VIP, na.rm = TRUE), 
+                            SNP_count = .N,
+                            SNP_max_size = max(subset_size)), 
+                        by = SNP]
+```
+
+
+```{r}
+VIP_THRESHOLD <- 4
+
+# Filtrer les SNP sur le VIP moyen
+
+VIP_snps <- vip_mean[VIP_mean > VIP_THRESHOLD, SNP]
+X_VIP_sub <- X[, VIP_snps, drop = FALSE]
+
+
+length(VIP_snps)
+```
+
+
+```{r}
+res_VIP_Sub <- run_ridge_nested_cv(
+  X = X_VIP_sub,
+  y = y,
+  K_outer = 50,
+  K_inner = 20,
+  seed = 123
+)
+```
+
+
+
+```{r}
+df_plot <- data.frame(R2 = res_VIP_Sub$R2)
+
+ggplot(df_plot, aes(x = "", y = R2)) +
+  geom_boxplot(width = 0.1, outlier.size = 0.8, alpha = 0.7) +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw() +
+  labs(
+    x = NULL,
+    y = expression(R^2),
+    title = expression("Distribution des performances prédictives (" * R^2 * ")")
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+```
+
+
+# Ridge sur importance RF ! 
+```{r}
+SAVE_DIR_RF <- "../results_random_RF"
+imp_all <- rbindlist(
+  lapply(list.files(SAVE_DIR_RF, pattern = "imp_RF", full.names = TRUE), readRDS)
+)
+
+rf_summary <- imp_all[, .(
+  mean_imp = mean(abs(importance), na.rm = TRUE),
+  sd_imp   = sd(importance, na.rm = TRUE),
+  freq     = .N
+), by = SNP]
+head(rf_summary)
+```
+
+
+```{r}
+IMP_THRESHOLD <- 1
+
+# Filtrer les SNP sur le VIP moyen
+
+Imp_snps <- rf_summary[mean_imp > IMP_THRESHOLD, SNP]
+X_Imp_sub <- X[, Imp_snps, drop = FALSE]
+
+
+length(Imp_snps)
+```
+
+
+
+
+```{r}
+res_Imp_Sub <- run_ridge_nested_cv(
+  X = X_Imp_sub,
+  y = y,
+  K_outer = 50,
+  K_inner = 20,
+  seed = 123
+)
+
+```
+
+```{r}
+df_plot <- data.frame(R2 = res_Imp_Sub$R2)
+
+ggplot(df_plot, aes(x = "", y = R2)) +
+  geom_boxplot(width = 0.1, outlier.size = 0.8, alpha = 0.7) +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw() +
+  labs(
+    x = NULL,
+    y = expression(R^2),
+    title = expression("Distribution des performances prédictives (" * R^2 * ")")
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+```
+# Union !
+
+```{r}
+K<- 1500
+top_rf  <- rf_summary[order(-mean_imp)][1:K, SNP]
+top_vip <- vip_mean[order(-VIP_mean)][1:K, SNP]
+top_union <- union(top_rf, top_vip)
+length(top_union)
+```
+
+```{r}
+X_Union_sub <- X[, top_union, drop = FALSE]
+dim(X_Union_sub)
+```
+
+```{r}
+res_Union_Sub <- run_ridge_nested_cv(
+  X = X_Union_sub,
+  y = y,
+  K_outer = 50,
+  K_inner = 20,
+  seed = 123
+)
+
+```
+```{r}
+summary(res_Union_Sub$R2)
+```
+
+
+```{r}
+df_plot <- data.frame(R2 = res_Union_Sub$R2)
+
+ggplot(df_plot, aes(x = "", y = R2)) +
+  geom_boxplot(width = 0.1, outlier.size = 0.8, alpha = 0.7) +
+  coord_cartesian(ylim = c(0, 1)) +
+  theme_bw() +
+  labs(
+    x = NULL,
+    y = expression(R^2),
+    title = expression("Distribution des performances prédictives (" * R^2 * ")")
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+```
+# Comparaison finale 
+
+```{r}
+summary(res_Union_Sub$R2)
+summary(res_VIP_Sub$R2)
+summary(res_Imp_Sub$R2)
+```
+
+```{r}
+res_Union_Sub <- as.data.table(res_Union_Sub)
+res_VIP_Sub   <- as.data.table(res_VIP_Sub)
+res_Imp_Sub   <- as.data.table(res_Imp_Sub)
+
+res_Union_Sub[, source := "Union"]
+res_VIP_Sub[, source := "VIP"]
+res_Imp_Sub[, source := "RF importance"]
+
+all_R2 <- rbind(res_Union_Sub[, .(R2, source)],
+                res_VIP_Sub[, .(R2, source)],
+                res_Imp_Sub[, .(R2, source)])
+all_R2$source <- as.factor(all_R2$source)
+```
+
+
+
+```{r}
+ggplot(all_R2, aes(x = source, y = R2, fill = source)) +
+  geom_boxplot(width = 0.1, outlier.size = 0.5) +
+  theme_bw() +
+  scale_y_continuous(limits = c(0,1)) +
+  labs(x = "Méthode", y = expression(R^2), title = "Distribution du R² par méthode") +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1,  size = rel(1.5)))
+```
+
