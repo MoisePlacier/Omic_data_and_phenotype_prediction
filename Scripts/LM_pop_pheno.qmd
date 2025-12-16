@@ -89,9 +89,7 @@ Y_residuals
 ```
 
 ```{r}
-save_dir <- "data"
-dir.create(save_dir, showWarnings = FALSE)
-
-# Enregistrer l'objet Y_residuals dans un .rda
-save(Y_residuals, file = file.path(save_dir, "LM_Pheno_pop_Residuals.rda"))
+save_dir <- "Residuals" 
+dir.create(save_dir, showWarnings = FALSE) 
+saveRDS(Y_residuals, file = file.path(save_dir, paste0("LM_Pheno_pop_Residuals.rds")))
 ```
