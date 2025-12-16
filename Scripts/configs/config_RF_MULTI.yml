@@ -1,0 +1,26 @@
+data:
+  phenotype: "data/Phenotype.rda"
+  genomic: "data/Genomic.rda"
+  localisation: "data/localisation.rda"
+  residuals: "Residuals/LM_Pheno_pop_Residuals.rds"  # optionnel
+
+analysis:
+  phenotypes:
+    - "HT2009"
+    - "CIRC2011"
+    - "Rust"
+    - "CIRC2009"
+    - "BudFlushSlope"
+    - "RamifSyllep"
+    - "BrAnglVert"
+    - "Dia2015_sqrt"
+  use_residuals: true   # true = residuals, false = phénotypes bruts
+  n_iter: 4
+  subset_size: 5
+  seed: 123
+
+cv:
+  outer_folds: 5
+
+output:
+  save_dir: "results/RF_Residuals_multi"
