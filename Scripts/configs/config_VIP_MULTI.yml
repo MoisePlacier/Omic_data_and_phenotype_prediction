@@ -2,7 +2,7 @@ data:
   phenotype: "data/Phenotype.rda"
   genomic: "data/Genomic.rda"
   localisation: "data/localisation.rda"
-  residuals: "Residuals/LM_Pheno_pop_Residuals.rds"
+  residuals: "data/LM_Pheno_pop_Residuals.rds"
 
 analysis:
   phenotypes:
@@ -23,4 +23,4 @@ cv:
   outer_folds: 5
 
 output:
-  save_dir: "results/VIP_scores_multi"
+  save_dir: "results/VIP_scores_multi_residualtest"

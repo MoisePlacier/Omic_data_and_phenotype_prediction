@@ -54,9 +54,6 @@ rf_summary <- imp_all[, .(
 
 ```
 
-
-
-
 # Merge des scores
 
 ```{r}

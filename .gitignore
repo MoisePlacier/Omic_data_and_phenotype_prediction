@@ -3,6 +3,7 @@
 data
 .rds
 *.rds
+*.rda
 
 results_random_VIP_PLS/
 

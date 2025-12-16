@@ -1,7 +1,6 @@
 ---
 title: "Clustering LD phenotypique based"
 format: html
-output: html_notebook
 editor: visual
 ---
 
@@ -17,7 +16,6 @@ library(mixOmics)
 library(yaml)
 
 ```
-
 
 # import des datas
 

@@ -193,4 +193,34 @@ for (BASE_NAME in PHENOS) {
   }
 
   stopCluster(cl)
+
+  ## CONCATÉNATION FINALE
+
+  perf_files <- list.files(
+    SAVE_DIR,
+    pattern = "^perf_.*\\.rds$",
+    full.names = TRUE
+  )
+
+  Imp_files <- list.files(
+    SAVE_DIR,
+    pattern = "^imp_.*\\.rds$",
+    full.names = TRUE
+  )
+
+  perf_all <- rbindlist(lapply(perf_files, readRDS))
+  vip_all  <- rbindlist(lapply(Imp_files,  readRDS))
+
+  saveRDS(
+    perf_all,
+    file = file.path(SAVE_DIR, paste0("RF_perf_all_", BASE_NAME, ".rds"))
+  )
+
+  saveRDS(
+    vip_all,
+    file = file.path(SAVE_DIR, paste0("RF_scores_all_", BASE_NAME, ".rds"))
+  )
+
+  file.remove(perf_files)
+  file.remove(Imp_files)
 }
