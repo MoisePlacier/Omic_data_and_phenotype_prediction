@@ -105,9 +105,7 @@ run_ridge_nested_cv <- function(
 # Ridge regression sur le dataset complet !
 
 ```{r}
-load("Phenotype")
-load("Genomic")
-load("localisation")
+
 
 pheno <- as.data.table(Phenotype)
 loc_df <- as.data.table(localisation)
@@ -123,8 +121,6 @@ y <- as.numeric(y)
 X <- as.matrix(merged[, 23:ncol(merged)])
 ```
 
-
-
 ```{r}
 res_ridge <- run_ridge_nested_cv(
   X = X,
@@ -135,11 +131,10 @@ res_ridge <- run_ridge_nested_cv(
 )
 ```
 
-
 # Ridge sur la selection à partir du score VIP !
 
 ```{r}
-SAVE_DIR <- "results_random_VIP_PLS"
+SAVE_DIR <- "results/results_random_VIP_PLS"
 # tous fichiers de performance 
 perf_files <- list.files(path = SAVE_DIR, pattern = "^perf_s5000.*\\.rds$", full.names = TRUE)
 results_perf <- rbindlist(lapply(perf_files, readRDS))
@@ -154,7 +149,6 @@ vip_mean <- results_vip[, .(VIP_mean = mean(VIP, na.rm = TRUE),
                         by = SNP]
 ```
 
-
 ```{r}
 VIP_THRESHOLD <- 4
 
@@ -167,7 +161,6 @@ X_VIP_sub <- X[, VIP_snps, drop = FALSE]
 length(VIP_snps)
 ```
 
-
 ```{r}
 res_VIP_Sub <- run_ridge_nested_cv(
   X = X_VIP_sub,
@@ -177,8 +170,6 @@ res_VIP_Sub <- run_ridge_nested_cv(
   seed = 123
 )
 ```
-
-
 
 ```{r}
 df_plot <- data.frame(R2 = res_VIP_Sub$R2)
@@ -198,10 +189,10 @@ ggplot(df_plot, aes(x = "", y = R2)) +
   )
 ```
 
+# Ridge sur importance RF !
 
-# Ridge sur importance RF ! 
 ```{r}
-SAVE_DIR_RF <- "../results_random_RF"
+SAVE_DIR_RF <- "results/results_random_RF"
 imp_all <- rbindlist(
   lapply(list.files(SAVE_DIR_RF, pattern = "imp_RF", full.names = TRUE), readRDS)
 )
@@ -214,7 +205,6 @@ rf_summary <- imp_all[, .(
 head(rf_summary)
 ```
 
-
 ```{r}
 IMP_THRESHOLD <- 1
 
@@ -226,9 +216,6 @@ X_Imp_sub <- X[, Imp_snps, drop = FALSE]
 
 length(Imp_snps)
 ```
-
-
-
 
 ```{r}
 res_Imp_Sub <- run_ridge_nested_cv(
@@ -258,6 +245,7 @@ ggplot(df_plot, aes(x = "", y = R2)) +
     axis.ticks.x = element_blank()
   )
 ```
+
 # Union !
 
 ```{r}
@@ -283,10 +271,10 @@ res_Union_Sub <- run_ridge_nested_cv(
 )
 
 ```
+
 ```{r}
 summary(res_Union_Sub$R2)
 ```
-
 
 ```{r}
 df_plot <- data.frame(R2 = res_Union_Sub$R2)
@@ -305,7 +293,8 @@ ggplot(df_plot, aes(x = "", y = R2)) +
     axis.ticks.x = element_blank()
   )
 ```
-# Comparaison finale 
+
+# Comparaison finale
 
 ```{r}
 summary(res_Union_Sub$R2)
@@ -328,8 +317,6 @@ all_R2 <- rbind(res_Union_Sub[, .(R2, source)],
 all_R2$source <- as.factor(all_R2$source)
 ```
 
-
-
 ```{r}
 ggplot(all_R2, aes(x = source, y = R2, fill = source)) +
   geom_boxplot(width = 0.1, outlier.size = 0.5) +
@@ -338,4 +325,3 @@ ggplot(all_R2, aes(x = source, y = R2, fill = source)) +
   labs(x = "Méthode", y = expression(R^2), title = "Distribution du R² par méthode") +
   theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1,  size = rel(1.5)))
 ```
-

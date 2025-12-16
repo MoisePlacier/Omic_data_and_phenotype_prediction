@@ -20,6 +20,7 @@ library(progressr)
 ```
 
 # import des datas
+
 ```{r}
 data(Phenotype)
 data(Genomic)
@@ -35,7 +36,7 @@ merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
 merged<- merge(merged, geno, by = "ID")
 ```
 
-# PLS : Phenotype ~ all SNP 
+# PLS : Phenotype \~ all SNP
 
 ```{r}
 
@@ -53,7 +54,6 @@ X_test  <- X[-train_index, ]
 y_train <- y[train_index]
 y_test  <- y[-train_index]
 ```
-
 
 ```{r}
 #  PLS 
@@ -76,7 +76,6 @@ cat("R² sur l'ensemble de test :", round(R2_test, 3), "\n")
 RMSE_test <- sqrt(mean((y_test - y_pred)^2))
 cat("RMSEP sur l'ensemble de test :", round(RMSE_test, 3), "\n")
 ```
-
 
 ```{r}
 
@@ -102,22 +101,13 @@ ggplot(plot_df, aes(x = Observed, y = Predicted, color = Population)) +
         legend.position = "right")
 ```
 
-
-
-# PLS Subset SNP 
-
-
-
+# PLS Subset SNP
 
 ```{r}
 y <- merged$CIRC2009  
 y <- as.numeric(y)
 X <- as.matrix(merged[,23:217022])
 ```
-
-
-
-
 
 ```{r}
 dir.create("results_random_SNP_PLS", showWarnings = FALSE)
@@ -233,14 +223,14 @@ results <- foreach(
 stopCluster(cl)
 
 ```
+
 ```{r}
 stopCluster(cl)
 ```
 
-
 ```{r}
 # Récupérer tous les fichiers .rds dans le dossier
-files <- list.files("results_random_SNP_PLS", pattern = "\\.rds$", full.names = TRUE)
+files <- list.files("results/results_random_SNP_PLS", pattern = "\\.rds$", full.names = TRUE)
 
 # Lire tous les fichiers et combiner en une seule table
 results <- rbindlist(lapply(files, readRDS))
@@ -248,7 +238,6 @@ results <- rbindlist(lapply(files, readRDS))
 # Vérifier
 head(results)
 ```
-
 
 ```{r}
 # Boxplots

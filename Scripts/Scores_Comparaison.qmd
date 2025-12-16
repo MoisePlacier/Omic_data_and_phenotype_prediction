@@ -1,0 +1,119 @@
+---
+title: "Scores_Comparaison"
+format: html
+editor: visual
+---
+
+```{r}
+library(pls)
+library(caret)
+library(data.table)
+library(parallel)
+library(doParallel)
+library(data.table)
+library(ggplot2)
+library(nnet)
+library(pls)
+library(FactoMineR)
+library(qqman)
+library(mixOmics)
+library(glmnet)
+```
+
+# Scores VIP
+
+```{r}
+SAVE_DIR <- "results/results_random_VIP_PLS"
+# tous fichiers de performance 
+perf_files <- list.files(path = SAVE_DIR, pattern = "^perf_s5000.*\\.rds$", full.names = TRUE)
+results_perf <- rbindlist(lapply(perf_files, readRDS))
+
+# tous les fichiers VIP 
+vip_files <- list.files(path = SAVE_DIR, pattern = "^vip_s5000.*\\.rds$", full.names = TRUE)
+results_vip <- rbindlist(lapply(vip_files, readRDS))
+
+vip_mean <- results_vip[, .(VIP_mean = mean(VIP, na.rm = TRUE), 
+                            SNP_count = .N,
+                            SNP_max_size = max(subset_size)), 
+                        by = SNP]
+```
+
+# Scores Importance
+
+```{r}
+SAVE_DIR_RF <- "results/results_random_RF"
+imp_all <- rbindlist(
+  lapply(list.files(SAVE_DIR_RF, pattern = "imp_RF", full.names = TRUE), readRDS)
+)
+
+rf_summary <- imp_all[, .(
+  mean_imp = mean(abs(importance), na.rm = TRUE),
+  sd_imp   = sd(importance, na.rm = TRUE),
+  freq     = .N
+), by = SNP]
+
+```
+
+
+
+
+# Merge des scores
+
+```{r}
+comp_df <- merge(
+  rf_summary[, .(SNP, mean_imp, sd_imp, freq_rf = freq)],
+  vip_mean[, .(SNP, VIP_mean, freq_vip = SNP_count)],
+  by = "SNP",
+  all = FALSE
+)
+```
+
+# Correlation spearman rangs d’importance
+
+```{r}
+cor(comp_df$mean_imp, comp_df$VIP_mean, method = "spearman")
+```
+
+```{r}
+ggplot(comp_df, aes(x = VIP_mean, y = mean_imp)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, linetype = "dashed") +
+  theme_bw() +
+  labs(
+    x = "VIP moyen (PLS)",
+    y = "Importance moyenne |RF|",
+    title = "Comparaison des scores d’importance RF vs PLS"
+  )
+```
+
+```{r}
+comp_df[, rank_rf  := rank(-mean_imp, ties.method = "average")]
+comp_df[, rank_vip := rank(-VIP_mean, ties.method = "average")]
+cor(comp_df$rank_rf, comp_df$rank_vip, method = "spearman")
+```
+
+# Overlap des Top-K SNP
+
+```{r}
+K <- 100
+
+top_rf  <- rf_summary[order(-mean_imp)][1:K, SNP]
+top_vip <- vip_mean[order(-VIP_mean)][1:K, SNP]
+
+length(intersect(top_rf, top_vip))
+length(intersect(top_rf, top_vip)) / K
+
+
+```
+
+```{r}
+ggplot(comp_df, aes(x = rank_vip, y = rank_rf)) +
+  geom_point(alpha = 0.4) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  theme_bw() +
+  labs(
+    x = "Rang VIP (PLS)",
+    y = "Rang importance RF",
+    title = "Comparaison des rangs d’importance"
+  )
+```

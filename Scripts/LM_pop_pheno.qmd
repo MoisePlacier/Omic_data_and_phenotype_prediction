@@ -1,0 +1,95 @@
+---
+title: "LM_pop_pheno"
+format: html
+editor: visual
+---
+
+```{r}
+library(data.table)
+library(ggplot2)
+library(caret)
+library(nnet)
+library(pls)
+library(FactoMineR)
+library(qqman)
+library(mixOmics)
+
+```
+
+# import des datas
+
+```{r}
+data(Phenotype)
+data(Genomic)
+data("localisation")
+```
+
+```{r}
+pheno <- as.data.table(Phenotype)
+loc_df<- as.data.table(localisation)
+geno<- as.data.table(Genomic)
+geno[, ID := rownames(Genomic)]
+pheno[, ID := rownames(Phenotype)]
+
+merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
+
+```
+
+# LM (Pheno \~ population )
+
+```{r}
+df <- as.data.table(merged)
+```
+
+```{r}
+phenos <- names(df)[sapply(df, is.numeric)]
+phenos <- setdiff(phenos, c("class_index","Lat","Lgn","ID"))
+```
+
+```{r}
+phenos
+```
+
+```{r}
+get_r2 <- function(var) {
+  form<- as.formula(paste(var, "~ Population"))
+  mod<- lm(form, data = df)
+  summary(mod)$r.squared
+}
+
+r2_values<- data.table(
+  phenotype = phenos,
+  r2= sapply(phenos, get_r2))
+
+ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
+  geom_point(size = 3) +
+  geom_segment(aes(x = phenotype, xend = phenotype, y = 0, yend = r2)) +
+  coord_flip() +
+  ylab("R² lm(Phénotype ~ Population)") +
+  xlab("Caractère phénotypique") +
+  theme_minimal()
+```
+
+```{r}
+get_residuals <- function(var, data) {
+  form <- as.formula(paste(var, "~ Population"))
+  resid(lm(form, data = data))
+}
+
+Y_residuals <- as.data.frame(
+  sapply(phenos, get_residuals, data = df)
+)
+
+# Conserver les IDs si besoin
+Y_residuals$ID <- df$ID
+```
+
+```{r}
+Y_residuals
+```
+
+```{r}
+save_dir <- "Residuals" 
+dir.create(save_dir, showWarnings = FALSE) 
+saveRDS(Y_residuals, file = file.path(save_dir, paste0("LM_Pheno_pop_Residuals.rds")))
+```
