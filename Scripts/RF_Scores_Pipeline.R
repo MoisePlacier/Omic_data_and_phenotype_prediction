@@ -46,19 +46,31 @@ set.seed(SEED)
 ############################
 ## Chargement des données
 ############################
-load(Y_FILE)    # doit créer Phenotype
-load(X_FILE)    # doit créer Genomic
-load(LOC_FILE)  # doit créer localisation
+load(Y_FILE)        # doit créer Phenotype
+load(X_FILE)        # doit créer Genomic
+load(LOC_FILE)      # doit créer localisation
 
-pheno <- as.data.table(Phenotype)
+readRDS("results/Residuals/LM_Pheno_pop_Residuals.rds")
+
+#################### pour faire sur les résiduals :
+#pheno <- as.data.table(readRDS("results/Residuals/LM_Pheno_pop_Residuals.rds"))
+#################### pour faire sur phénotype !
+pheno  <- as.data.table(Phenotype)
+pheno[, ID := rownames(Phenotype)]
+######################################
+
 geno  <- as.data.table(Genomic)
 loc   <- as.data.table(localisation)
 
 geno[, ID := rownames(Genomic)]
-pheno[, ID := rownames(Phenotype)]
+
+
 
 merged <- merge(pheno, loc[, .(Population, ID)], by = "ID")
 merged <- merge(merged, geno, by = "ID")
+
+y <- as.numeric(merged[[BASE_NAME]])
+X <- as.matrix(merged[, 23:ncol(merged)])
 
 ############################
 ## Y et X
@@ -96,7 +108,7 @@ run_RF_analysis <- function(task, X, y, save_dir, base_name) {
     min.node.size = 5,
     importance = "impurity_corrected",
     oob.error = FALSE,
-    num.threads = 1,
+    num.threads = 4,
     seed = 123
   )
 

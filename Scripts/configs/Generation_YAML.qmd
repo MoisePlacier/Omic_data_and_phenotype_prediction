@@ -7,6 +7,14 @@ editor: visual
 library(yaml)
 ```
 
+on au total $p = 217{,}000$ SNPs.
+ Ensuite 
+![Performance de la PLS pour le phénotype CIRC2009 en fonction de la taille du subset](../Plots/Performance_PLS_Subset_Size.png)
+5000 SNP est un bon compromis entre taille du subset et performance prédictive 
+
+$n_\text{subset} = 5{,}000$ SNPs sélectionnés à chaque itération
+
+avec 870 itérations, chaque SNP sera selectionné en moyenne 20 fois 
 
 ```{r}
 load("../data/Phenotype.rda")
@@ -17,7 +25,7 @@ phenotypes
 # Configs RF 
 
 ```{r}
-N_ITER <- 400
+N_ITER <- 870
 SUBSET_SIZE <- 5000
 SEED <- 123
 OUTER_FOLDS <- 5
@@ -59,7 +67,7 @@ for (pheno in phenotypes) {
 # Configs VIP
 
 ```{r}
-N_ITER <- 400
+N_ITER <- 870
 SUBSET_SIZE <- 5000
 SEED <- 123
 OUTER_FOLDS <- 5

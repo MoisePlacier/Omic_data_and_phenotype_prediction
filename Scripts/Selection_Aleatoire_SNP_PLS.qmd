@@ -253,6 +253,34 @@ ggplot(results, aes(x = factor(subset_size), y = RMSE, fill = factor(subset_size
 ```
 
 ```{r}
+
+# Création du plot
+p <- ggplot(results, aes(x = factor(subset_size), y = R2, fill = factor(subset_size))) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title = "R² selon la taille du sous-ensemble de SNP",
+    x = "Nombre de SNP",
+    y = "R² sur l'échantillon test"
+  ) +
+  scale_fill_brewer(palette = "Set2") +
+  theme(legend.position = "none")
+
+# Création du dossier si nécessaire
+dir.create("Plots", showWarnings = FALSE, recursive = TRUE)
+
+# Sauvegarde
+ggsave(
+  filename = "Plots/Performance_PLS_Subset_Size.png",
+  plot = p,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+```
+
+
+```{r}
 setDT(results)
 compact_summary <- results[
   , {

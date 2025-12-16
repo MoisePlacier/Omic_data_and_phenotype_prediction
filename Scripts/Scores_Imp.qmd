@@ -14,6 +14,35 @@ library(ranger)
 ```
 
 ```{r}
+load_rda_as_dt <- function(file) {
+  tmp_env <- new.env()
+  load(file, envir = tmp_env)
+  obj_name <- ls(tmp_env)[1]           # prend le premier objet
+  as.data.table(tmp_env[[obj_name]])
+}
+
+# Charger les fichiers
+pheno <- load_rda_as_dt("data/LM_Pheno_pop_Residuals.rda")    # Y_FILE peut être un .rda avec n'importe quel nom
+geno  <- load_rda_as_dt("data/Genomic.rda")
+loc   <- load_rda_as_dt("data/localisation.rda")
+
+# Ajout des ID si nécessaire (adapté aux objets originaux)
+if (!"ID" %in% colnames(pheno)) pheno[, ID := rownames(pheno)]
+if (!"ID" %in% colnames(geno))  geno[, ID := rownames(geno)]
+
+# Merge avec localisation
+merged <- merge(pheno, loc[, .(Population, ID)], by = "ID")
+merged <- merge(merged, geno, by = "ID")
+```
+
+```{r}
+y <- as.numeric(merged[[BASE_NAME]])
+X <- as.matrix(merged[, 23:ncol(merged)])
+```
+
+
+
+```{r}
 data(Phenotype)
 data(Genomic)
 data("localisation")

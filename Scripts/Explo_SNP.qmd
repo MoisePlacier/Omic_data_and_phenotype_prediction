@@ -14,8 +14,10 @@ library(pls)
 library(FactoMineR)
 library(qqman)
 library(mixOmics)
+library(yaml)
 
 ```
+
 
 # import des datas
 
@@ -42,8 +44,6 @@ merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
 df <- as.data.table(merged)
 ```
 
-
-
 ```{r}
 phenos <- names(df)[sapply(df, is.numeric)]
 phenos <- setdiff(phenos, c("class_index","Lat","Lgn","ID"))
@@ -52,7 +52,6 @@ phenos <- setdiff(phenos, c("class_index","Lat","Lgn","ID"))
 ```{r}
 phenos
 ```
-
 
 ```{r}
 get_r2 <- function(var) {
@@ -76,9 +75,10 @@ ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
   xlab("Caractère phénotypique") +
   theme_minimal()
 ```
-khi 2 snp ~ pop 
 
-table cont snp chr13 et pop => haplo pour différentier la pop 
+khi 2 snp \~ pop
+
+table cont snp chr13 et pop =\> haplo pour différentier la pop
 
 # Data visualisation
 
@@ -329,7 +329,6 @@ X_test <- X_train_df[-inner_train_index, , drop = FALSE]
 y_test <- y_train[-inner_train_index]
 ```
 
-
 ```{r}
 df_train <- data.frame(y = y_train, X_train_df)
 pls_final <- plsr(y ~ ., data = df_train, ncomp = ncomp_opt, validation = "none")
@@ -338,7 +337,6 @@ pls_final <- plsr(y ~ ., data = df_train, ncomp = ncomp_opt, validation = "none"
   
 y_pred_final <- as.vector(predict(pls_final, newdata = X_test_df, ncomp = ncomp_opt))
 ```
-
 
 # PLS Subset SNP \| calcul de VIP \| nested CV
 

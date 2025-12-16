@@ -6,7 +6,12 @@ library(data.table)
 library(parallel)
 library(doParallel)
 library(yaml)
+###################################
 
+## Exemple de code bash a run pour executer le pipeline :
+# Rscript VIP_Scores_Pipeline.R configs/config_VIP_CIRC2009.yml
+
+######################################
 #---------------------------------
 # Lecture du YAML
 #---------------------------------
