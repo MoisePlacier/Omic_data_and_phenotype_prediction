@@ -3,24 +3,94 @@ title: "Generation_YAML"
 format: html
 editor: visual
 ---
-
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
 ```{r}
-1 + 1
+library(yaml)
 ```
 
-You can add options to executable code like this
 
 ```{r}
-#| echo: false
-2 * 2
+load("../data/Phenotype.rda")
+pheno <- as.data.table(Phenotype)
+phenotypes <- names(pheno)[sapply(df, is.numeric)]
+phenotypes
+```
+# Configs RF 
+
+```{r}
+N_ITER <- 400
+SUBSET_SIZE <- 5000
+SEED <- 123
+OUTER_FOLDS <- 5
+
+for (pheno in phenotypes) {
+
+  cfg <- list(
+
+    data = list(
+      phenotype    = "data/Phenotype.rda",
+      genomic      = "data/Genomic.rda",
+      localisation = "data/localisation.rda"
+    ),
+
+    analysis = list(
+      phenotype_name = pheno,
+      n_iter         = N_ITER,
+      subset_size    = SUBSET_SIZE,
+      seed           = SEED
+    ),
+
+    cv = list(
+      outer_folds = 6
+    ),
+
+    output = list(
+      save_dir = paste0("results/RF_", pheno)
+    )
+  )
+
+  yaml_file <- paste0("config_RF_", pheno, ".yml")
+
+  write_yaml(cfg, yaml_file)
+
+  message("Written: ", yaml_file)
+}
+
+```
+# Configs VIP
+
+```{r}
+N_ITER <- 400
+SUBSET_SIZE <- 5000
+SEED <- 123
+OUTER_FOLDS <- 5
+PHENO_DIR <- "data"
+SAVE_DIR_BASE <- "results"
+
+
+for (pheno in phenotypes) {
+  cfg <- list(
+    data = list(
+      phenotype    = file.path(PHENO_DIR, "Phenotype.rda"),
+      genomic      = file.path(PHENO_DIR, "Genomic.rda"),
+      localisation = file.path(PHENO_DIR, "localisation.rda")
+    ),
+    analysis = list(
+      phenotype_name = pheno,
+      n_iter         = N_ITER,
+      subset_size    = SUBSET_SIZE,
+      seed           = SEED
+    ),
+    cv = list(
+      outer_folds = OUTER_FOLDS
+    ),
+    output = list(
+      save_dir = file.path(SAVE_DIR_BASE, paste0("VIP_", pheno))
+    )
+  )
+
+  yaml_file <- paste0("config_VIP_", pheno, ".yml")
+  write_yaml(cfg, yaml_file)
+  message("Written: ", yaml_file)
+}
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
