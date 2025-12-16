@@ -1,0 +1,13 @@
+data:
+  phenotype: data/Phenotype.rda
+  genomic: data/Genomic.rda
+  localisation: data/localisation.rda
+analysis:
+  phenotype_name: S_G
+  n_iter: 400.0
+  subset_size: 5000.0
+  seed: 123.0
+cv:
+  outer_folds: 6.0
+output:
+  save_dir: results/RF_S_G
