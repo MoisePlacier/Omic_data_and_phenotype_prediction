@@ -114,3 +114,486 @@ ggplot(comp_df, aes(x = rank_vip, y = rank_rf)) +
     title = "Comparaison des rangs d’importance"
   )
 ```
+
+# Parquet 
+
+```{r}
+library(data.table)
+library(ggplot2)
+library(parallel)
+library(corrplot)
+```
+
+## leccture des scores 
+```{r}
+cols_to_read <- c(
+  "SNP", "phenotype", "method", "context",
+  "n_obs", "mean", "median", "sd", "q90", "q95", "max"
+)
+all_scores_dt <- read_parquet("results/all_scores.parquet",
+                              as_data_table = TRUE,
+                              col_select = cols_to_read)
+
+# Classement basé sur la moyenne
+all_scores_dt[, rank := frank(-mean, ties.method = "min"),
+              by = .(phenotype, method, context)]
+
+# Normalisation robuste des scores basée sur la moyenne
+all_scores_dt[, score_scaled := (mean - mean(mean, na.rm = TRUE)) / sd(mean, na.rm = TRUE),
+              by = .(phenotype, method)]
+
+
+tmp <- tstrsplit(all_scores_dt$SNP, "_")
+all_scores_dt[, chrom := tmp[[1]]]
+all_scores_dt[, pos   := as.numeric(tmp[[2]])]
+
+all_scores_dt[, chrom_num := as.numeric(sub("^Chr", "", chrom))]
+```
+
+```{r}
+head(all_scores_dt)
+```
+## Manahattan plot ! 
+
+
+```{r}
+pheno_sel <- "CIRC2009"
+context_sel   <- "residuals"
+method_sel    <- "RF"
+
+dt <- all_scores_dt[
+  method   == method_sel &
+  phenotype == pheno_sel &
+  context  == context_sel,
+  .(SNP, score_scaled,chrom_num,pos)
+]
+dt <- dt[!is.na(chrom_num)]
+
+manhattan(
+  dt,
+  chr = "chrom_num",
+  bp = "pos",
+  p = "score_scaled",
+  snp = "SNP",
+  col = c("gray10", "gray60"),
+  chrlabs = NULL,
+  highlight = NULL,
+  annotatePval = NULL,
+  annotateTop = TRUE,
+  logp = FALSE
+)
+```
+
+```{r}
+pheno_sel <- "CIRC2009"
+context_sel   <- "phenotype"
+method_sel    <- "RF"
+
+dt2 <- all_scores_dt[
+  method   == method_sel &
+  phenotype == pheno_sel &
+  context  == context_sel,
+  .(SNP, score_scaled,chrom_num,pos)
+]
+
+dt2 <- dt2[!is.na(chrom_num)]
+
+manhattan(
+  dt2,
+  chr = "chrom_num",
+  bp = "pos",
+  p = "score_scaled",
+  snp = "SNP",
+  col = c("gray10", "gray60"),
+  chrlabs = NULL,
+  highlight = NULL,
+  annotatePval = NULL,
+  annotateTop = TRUE,
+  logp = FALSE
+)
+```
+
+
+
+
+
+
+
+
+
+
+# YEAHHHHHH
+
+
+
+```{r}
+get_scores_for_pheno <- function(dt, pheno, method, context1, context2) {
+  dt1 <- dt[phenotype == pheno & method == method & context == context1,
+            .(SNP, score1 = score_scaled, rank1 = rank)]
+  dt2 <- dt[phenotype == pheno & method == method & context == context2,
+            .(SNP, score2 = score_scaled , rank2 = rank)]
+  merged <- merge(dt1, dt2, by = "SNP")
+  return(merged)
+}
+```
+
+
+```{r}
+dt1 <- all_scores_dt[phenotype == "CIRC2009" & method == "RF" & context == "phenotype",
+            .(SNP, score1 = score_scaled, rank1 = rank)]
+dt2 <- all_scores_dt[phenotype == "HT2009" & method == "RF" & context == "phenotype",
+            .(SNP, score2 = score_scaled , rank2 = rank)]
+merged <- merge(dt1, dt2, by = "SNP")
+
+spearman_all <- cor(dt1$score1, dt2$score2, method = "spearman")
+
+spearman_all
+
+topK <- 1000
+
+top1 <- dt1[order(rank1)][1:topK, SNP]
+top2 <- dt2[order(rank2)][1:topK, SNP]
+overlap <- length(intersect(top1, top2))
+overlap
+overlap_prop <- overlap / topK
+overlap_prop
+```
+
+```{r}
+library(data.table)
+
+# Fonction pour comparer deux phénotypes pour une méthode et un contexte
+compare_pheno_pair <- function(dt, ph1, ph2, method_sel, context_sel, topK = 1000) {
+  # Extraire les scores pour chaque phénotype
+  dt1 <- dt[phenotype == ph1 & method == method_sel & context == context_sel,
+            .(SNP, score1 = score_scaled, rank1 = rank)]
+  dt2 <- dt[phenotype == ph2 & method == method_sel & context == context_sel,
+            .(SNP, score2 = score_scaled, rank2 = rank)]
+  
+  merged <- merge(dt1, dt2, by = "SNP")
+  print(c(dim(merged),ph1,ph2))
+  
+  # Corrélation de Spearman
+  spearman <- cor(merged$score1, merged$score2, method = "spearman", use = "complete.obs")
+  
+  # TOP K overlap
+  top1 <- merged[order(rank1)][1:topK, SNP]
+  top2 <- merged[order(rank2)][1:topK, SNP]
+  overlap_prop <- length(intersect(top1, top2)) / topK
+  
+  data.table(
+    pheno1 = ph1,
+    pheno2 = ph2,
+    method = method_sel,
+    context = context_sel,
+    spearman = spearman,
+    topK_overlap = overlap_prop
+  )
+}
+
+# Fonction pour générer la matrice complète de comparaisons phénotypes
+compare_all_phenos <- function(dt, phenos, method_sel, context_sel, topK = 1000) {
+  res_list <- list()
+  for(i in 1:(length(phenos)-1)) {
+    for(j in (i+1):length(phenos)) {
+      res_list[[length(res_list)+1]] <- compare_pheno_pair(
+        dt, phenos[i], phenos[j], method_sel, context_sel, topK
+      )
+    }
+  }
+  rbindlist(res_list)
+}
+```
+
+
+
+```{r}
+# Exemple d'utilisation
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep")
+method_run <- "RF"
+context_run <- "phenotype"
+topK_run <- 100
+
+res_compare_pheno <- compare_all_phenos(all_scores_dt, phenos_run, method_run, context_run, topK_run)
+
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep")
+method_run <- "RF"
+context_run <- "residuals"
+topK_run <- 100
+
+res_compare_res <- compare_all_phenos(all_scores_dt, phenos_run, method_run, context_run, topK_run)
+
+```
+
+```{r}
+library(reshape2)
+
+# Ajouter une colonne pour indiquer le contexte
+res_compare[, context := "phenotype"]
+res_compare_res[, context := "residuals"]
+
+# Fusionner les deux résultats pour comparer
+res_all <- rbind(res_compare, res_compare_res)
+
+# Heatmap Spearman
+ggplot(res_all, aes(x = pheno1, y = pheno2, fill = spearman)) +
+  geom_tile() +
+  facet_wrap(~ context) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  labs(
+    title = "Spearman correlation des scores SNP entre phénotypes",
+    fill = "rho"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Heatmap TOP K overlap
+ggplot(res_all, aes(x = pheno1, y = pheno2, fill = topK_overlap)) +
+  geom_tile() +
+  facet_wrap(~ context) +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal() +
+  labs(
+    title = paste0("Proportion TOP ", topK_run, " SNPs communs entre phénotypes"),
+    fill = "TOP K overlap"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Optionnel : scatter plots pour vérifier un exemple particulier
+example_pair <- res_all[1]  # par exemple la première paire
+ph1 <- example_pair$pheno1
+ph2 <- example_pair$pheno2
+
+dt1 <- all_scores_dt[phenotype == ph1 & method == method_run & context == "phenotype",
+                     .(SNP, score1 = score_scaled, rank1 = rank)]
+dt2 <- all_scores_dt[phenotype == ph2 & method == method_run & context == "phenotype",
+                     .(SNP, score2 = score_scaled, rank2 = rank)]
+merged <- merge(dt1, dt2, by = "SNP")
+
+ggplot(merged, aes(x = score1, y = score2)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", col = "red") +
+  theme_minimal() +
+  labs(
+    x = paste0(ph1, "score sur phéno brut"),
+    y = paste0(ph2, "score sur phéno brut"),
+    title = paste0("Scores SNP comparés entre ", ph1, " et ", ph2))
+
+ph1 <- example_pair$pheno1
+ph2 <- example_pair$pheno2
+
+dt1 <- all_scores_dt[phenotype == ph1 & method == method_run & context == "residuals",
+                     .(SNP, score1 = score_scaled, rank1 = rank)]
+dt2 <- all_scores_dt[phenotype == ph2 & method == method_run & context == "residuals",
+                     .(SNP, score2 = score_scaled, rank2 = rank)]
+merged <- merge(dt1, dt2, by = "SNP")
+
+ggplot(merged, aes(x = score1, y = score2)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", col = "red") +
+  theme_minimal() +
+  labs(
+    x = paste0(ph1, "score calculés sur les résidus"),
+    y = paste0(ph2, "score calculés sur les résidus"),
+    title = paste0("Scores SNP comparés entre ", ph1, " et ", ph2))
+
+```
+
+
+
+```{r}
+table(res_compare_res$pheno1,res_compare_res$pheno2)
+```
+
+
+```{r}
+library(data.table)
+library(ggplot2)
+
+#-----------------------------------
+# Comparaison entre deux phénotypes
+#-----------------------------------
+compare_pheno_pair_safe <- function(dt, ph1, ph2, method_sel, context_sel, topK = 1000) {
+  
+  # Extraire les scores et retirer les NA
+  dt1 <- dt[phenotype == ph1 & method == method_sel & context == context_sel,
+            .(SNP, score1 = score_scaled, rank1 = rank)]
+  dt1 <- dt1[!is.na(score1)]
+  
+  dt2 <- dt[phenotype == ph2 & method == method_sel & context == context_sel,
+            .(SNP, score2 = score_scaled, rank2 = rank)]
+  dt2 <- dt2[!is.na(score2)]
+  
+  # Merge en gardant seulement les SNPs communs
+  merged <- merge(dt1, dt2, by = "SNP")
+  
+  # Si pas de SNP commun
+  if(nrow(merged) == 0) {
+    return(data.table(
+      pheno1 = ph1, pheno2 = ph2,
+      method = method_sel, context = context_sel,
+      spearman = NA_real_, topK_overlap = NA_real_
+    ))
+  }
+  
+  # Corrélation de Spearman
+  spearman <- cor(merged$score1, merged$score2, method = "spearman", use = "complete.obs")
+  
+  # TOP K overlap
+  top1 <- merged[order(rank1)][1:min(topK, .N), SNP]
+  top2 <- merged[order(rank2)][1:min(topK, .N), SNP]
+  overlap_prop <- length(intersect(top1, top2)) / min(topK, .N)
+  
+  data.table(
+    pheno1 = ph1, pheno2 = ph2,
+    method = method_sel, context = context_sel,
+    spearman = spearman, topK_overlap = overlap_prop
+  )
+}
+
+#-----------------------------------
+# Comparaison pour tous les phénotypes
+#-----------------------------------
+compare_all_phenos_full_safe <- function(dt, phenos, method_sel, context_sel, topK = 1000) {
+  res_list <- list()
+  for(ph1 in phenos) {
+    for(ph2 in phenos) {
+      res_list[[length(res_list)+1]] <- compare_pheno_pair_safe(
+        dt, ph1, ph2, method_sel, context_sel, topK
+      )
+    }
+  }
+  rbindlist(res_list)
+}
+
+#-----------------------------------
+# Exemple d'utilisation
+#-----------------------------------
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep")
+method_run <- "RF"
+context_run <- "phenotype"
+topK_run <- 1000
+
+res_pheno <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run, context_run, topK_run)
+
+res_pheno <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep")
+method_run <- "RF"
+context_run <- "phenotype"
+topK_run <- 1000
+
+res_compare <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run, context_run, topK_run)
+
+
+#-----------------------------------
+# Heatmap du TOP K overlap
+#-----------------------------------
+ggplot(res_compare, aes(x = pheno1, y = pheno2, fill = topK_overlap)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red", na.value = "grey80") +
+  theme_minimal() +
+  labs(title = paste0("Proportion TOP ", topK_run, " SNPs communs entre phénotypes"),
+       fill = "TOP K overlap") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#-----------------------------------
+# Heatmap de Spearman
+#-----------------------------------
+ggplot(res_compare, aes(x = pheno1, y = pheno2, fill = spearman)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, na.value = "grey80") +
+  theme_minimal() +
+  labs(title = paste0("Corrélation Spearman des scores entre phénotypes"),
+       fill = "Spearman rho") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+compare_scores <- function(scores_dt, topK = 10000) {
+  # Corrélation de Spearman sur tous les SNPs
+  spearman_all <- cor(scores_dt$score1, scores_dt$score2, method = "spearman")
+  
+  # Recouvrement des TOP K
+  top1 <- scores_dt[order(rank1)][1:topK, SNP]
+  top2 <- scores_dt[order(rank2)][1:topK, SNP]
+  overlap <- length(intersect(top1, top2))
+  overlap_prop <- overlap / topK
+  
+  return(list(
+    spearman_all = spearman_all,
+    topK_overlap = overlap,
+    topK_overlap_prop = overlap_prop
+  ))
+}
+
+plot_scores_comparison <- function(scores_dt, pheno, method) {
+  ggplot(scores_dt, aes(x = score1, y = score2)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", color = "blue") +
+    labs( 
+      x = "rang brut",
+      y = "rang résidus",
+      title = paste("Comparaison scores SNP |", pheno, "|", method)
+    ) +
+    theme_minimal()
+}
+
+```
+
+
+
+```{r}
+phenos <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope")
+methods <- c("RF")   
+
+results_list <- list()
+plots_list <- list()
+
+for (ph in phenos) {
+  for (m in methods) {
+    scores_dt <- get_scores_for_pheno(all_scores_dt, ph, m, "phenotype", "residuals")
+    comp <- compare_scores(scores_dt, topK = 100)
+    results_list[[paste(ph, m, sep = "_")]] <- comp
+    plots_list[[paste(ph, m, sep = "_")]] <- plot_scores_comparison(scores_dt, ph, m)
+  }
+}
+
+```
+
+
+
+```{r}
+names(results_list)
+```
+```{r}
+results_list$CIRC2009_RF
+results_list$CIRC2011_RF
+results_list$HT2009_RF
+results_list$BudFlushSlope_RF
+```
+
+
+
+```{r}
+plots_list$CIRC2009_RF
+plots_list$CIRC2011_RF
+```
+
+
+
+```{r}
+plots_list$HT2009_RF
+plots_list$BudFlushSlope_RF
+```
+

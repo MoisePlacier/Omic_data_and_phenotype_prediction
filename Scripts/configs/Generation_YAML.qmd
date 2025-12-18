@@ -3,18 +3,16 @@ title: "Generation_YAML"
 format: html
 editor: visual
 ---
+
 ```{r}
 library(yaml)
 ```
 
-on au total $p = 217{,}000$ SNPs.
- Ensuite 
-![Performance de la PLS pour le phénotype CIRC2009 en fonction de la taille du subset](../Plots/Performance_PLS_Subset_Size.png)
-5000 SNP est un bon compromis entre taille du subset et performance prédictive 
+on au total $p = 217{,}000$ SNPs. Ensuite ![Performance de la PLS pour le phénotype CIRC2009 en fonction de la taille du subset](../Plots/Performance_PLS_Subset_Size.png) 5000 SNP est un bon compromis entre taille du subset et performance prédictive
 
 $n_\text{subset} = 5{,}000$ SNPs sélectionnés à chaque itération
 
-avec 870 itérations, chaque SNP sera selectionné en moyenne 20 fois 
+avec 870 itérations, chaque SNP sera selectionné en moyenne 20 fois
 
 ```{r}
 load("../data/Phenotype.rda")
@@ -22,7 +20,8 @@ pheno <- as.data.table(Phenotype)
 phenotypes <- names(pheno)[sapply(df, is.numeric)]
 phenotypes
 ```
-# Configs RF 
+
+# Configs RF
 
 ```{r}
 N_ITER <- 870
@@ -64,6 +63,7 @@ for (pheno in phenotypes) {
 }
 
 ```
+
 # Configs VIP
 
 ```{r}
@@ -101,4 +101,3 @@ for (pheno in phenotypes) {
   message("Written: ", yaml_file)
 }
 ```
-

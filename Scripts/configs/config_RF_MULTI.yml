@@ -14,13 +14,13 @@ analysis:
     - "RamifSyllep"
     - "BrAnglVert"
     - "Dia2015_sqrt"
-  use_residuals: true   # true = residuals, false = phénotypes bruts
-  n_iter: 4
-  subset_size: 5
+  use_residuals: false   # true = residuals, false = phénotypes bruts
+  n_iter: 20
+  subset_size: 500
   seed: 123
 
 cv:
   outer_folds: 5
 
 output:
-  save_dir: "results/RF_Residuals_multi"
+  save_dir: "results/RF_multi"

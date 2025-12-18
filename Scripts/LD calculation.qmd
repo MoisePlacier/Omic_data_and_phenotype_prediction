@@ -3,6 +3,7 @@ title: "LD calculation"
 format: html
 editor: visual
 ---
+
 ```{r}
 library(data.table)
 library(ggplot2)
@@ -11,13 +12,14 @@ library(nnet)
 library(pls)
 library(snpStats)
 ```
+
 # import des datas
+
 ```{r}
 data(Phenotype)
 data(Genomic)
 data("localisation")
 ```
-
 
 ```{r}
 pheno <- as.data.table(Phenotype)
@@ -27,16 +29,12 @@ geno<- as.data.table(Genomic)
 pheno[, ID := rownames(Phenotype)]
 ```
 
-
-
 ```{r}
 geno_mat <- as.matrix(geno)
-coords <- do.call(rbind, strsplit(colnames(geno), "_"))
+coords <- do.call(rbind, strsplit(SNP, "_"))
 chrom <- coords[,1]
 pos <- as.numeric(coords[,2])
 ```
-
-
 
 ```{r}
 
@@ -71,13 +69,13 @@ res <- lapply(split(seq_along(pos), chrom), function(idx){
 ```{r}
 image(res[[1]]$D.prime, lwd=0)
 ```
+
 ```{r}
 geno_mat <- as.matrix(geno)
 
 storage.mode(geno_mat) <- "raw"
 geno_sm <- new("SnpMatrix", geno_mat)
 ```
-
 
 ```{r}
 ld.ceph <- ld(geno_sm, stats=c("D.prime", "R.squared"), depth=1000)
@@ -88,10 +86,10 @@ ld.ceph <- ld(geno_sm, stats=c("D.prime", "R.squared"), depth=1000)
 use <- 1:100
 image(ld.ceph$R.squared[use,use], lwd=0)
 ```
+
 ```{r}
 summary(ld.ceph$D.prime[use,use])
 ```
-
 
 ```{r}
 spectrum <- rainbow(10, start=0, end=1/6)[10:1]
@@ -103,4 +101,3 @@ lr100 <- c(68:167, 169:268)
 D.prime <- ld(ceph.1mb[,168], ceph.1mb[,lr100], stats="D.prime")
 where <- pos[lr100]
 ```
-

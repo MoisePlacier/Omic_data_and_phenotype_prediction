@@ -1,0 +1,190 @@
+---
+title: "Compile_pipeline_results"
+format: html
+editor: visual
+---
+
+liste des fichiers corrupted :
+
+"results/RF_scores_res/RF_Rust/RF_scores_all_Rust.rds" 
+
+results/RF_scores/RF_Rust/RF_scores_all_Rust.rds" 
+
+results/VIP_scores/VIP_CIRC2009/VIP_scores_all_CIRC2009.rds
+
+```{r}
+
+library(data.table)
+library(stringr)
+library(future)
+library(future.apply)
+```
+
+```{r}
+
+DIRS <- list(
+  VIP_pheno = list(
+    root    = "results/VIP_scores_res",
+    method  = "VIP",
+    context = "residuals",
+    score_col = "VIP"
+  ),
+  RF_resid = list(
+    root    = "results/VIP_scores",
+    method  = "VIP",
+    context = "phenotype",
+    score_col = "VIP"
+  ),
+    RF = list(
+    root    = "results/RF_scores",
+    method  = "RF",
+    context = "phenotype",
+    score_col = "importance"
+  ),
+    RF = list(
+    root    = "results/RF_scores_res",
+    method  = "RF",
+    context = "residuals",
+    score_col = "importance"
+  )
+)
+
+```
+
+```{r}
+read_score_dir <- function(root, method, context, score_col) {
+  print(c("traitement de >>>",root))
+  pheno_dirs <- list.dirs(root, recursive = FALSE, full.names = TRUE)
+  
+  print(c("pour les phénotypes :",pheno_dirs))
+
+  res <- lapply(pheno_dirs, function(d) {
+    phenotype <- basename(d)
+    phenotype <- str_remove(phenotype, "^(VIP|RF)_")
+    
+    print(c("phénotype >>>",phenotype))
+    
+    score_file <- list.files(
+      d,
+      pattern = "_scores_all_.*\\.rds$",
+      full.names = TRUE
+    )
+
+    if (length(score_file) != 1) return(NULL)
+
+    dt <- readRDS(score_file)
+
+    if (!all(c("SNP", score_col) %in% colnames(dt))) return(NULL)
+
+    dt[
+      ,
+      .(
+        scores_raw = list(get(score_col)),
+        n_obs      = .N,
+        mean       = mean(get(score_col)),
+        median     = median(get(score_col)),
+        sd         = sd(get(score_col)),
+        q90        = quantile(get(score_col), 0.90),
+        q95        = quantile(get(score_col), 0.95),
+        max        = max(get(score_col))
+      ),
+      by = SNP
+    ][
+      ,
+      `:=`(
+        phenotype = phenotype,
+        method    = method,
+        context   = context
+      )
+    ]
+  })
+  print(">>> done")
+  rbindlist(res, fill = TRUE)
+}
+```
+
+```{r}
+all_scores <- rbindlist(
+  lapply(DIRS, function(x) {
+    read_score_dir(
+      root      = x$root,
+      method    = x$method,
+      context   = x$context,
+      score_col = x$score_col
+    )
+  }),
+  fill = TRUE
+)
+
+
+setcolorder(
+  all_scores,
+  c(
+    "SNP", "phenotype", "method", "context",
+    "n_obs", "mean", "median", "sd", "q90", "q95", "max",
+    "scores_raw"
+  )
+)
+
+tmp_file <- tempfile(fileext = ".parquet")
+write_parquet(all_scores, tmp_file)
+
+final_file <- "results/all_scores.parquet"
+file.rename(tmp_file, final_file)
+
+```
+
+```{r}
+pheno_sel <- "CIRC2011"
+context_sel   <- "phenotype"
+method_sel    <- "RF"
+
+dt <- all_scores[
+  method   == method_sel &
+  phenotype == pheno_sel &
+  context  == context_sel &
+  SNP      == "Chr11_4052885",
+  .(SNP, mean, method, context)
+]
+```
+
+```{r}
+dt
+```
+
+### Save en parquet
+
+```{r}
+# Lecture des fichiers en liste
+files <- c("results/SNP_scores_RF.rds","results/SNP_scores_RF_res.rds","results/SNP_scores_VIP_res.rds")
+res <- lapply(files, readRDS)
+
+# Concaténation par lignes
+all_dt <- rbindlist(res, fill = TRUE)
+
+```
+
+```{r}
+library(arrow)
+```
+
+```{r}
+tmp_file <- tempfile(fileext = ".parquet")
+write_parquet(all_dt, tmp_file)
+
+# Puis on déplace le fichier temporaire vers le chemin final
+final_file <- "results/all_scores.parquet"
+file.rename(tmp_file, final_file)
+
+```
+
+```{r}
+# Lecture ultérieure
+cols_to_read <- c(    "SNP", "phenotype", "method", "context",
+    "n_obs", "mean", "median", "sd", "q90", "q95", "max")
+all_dt_loaded <- read_parquet(final_file, as_data_table = TRUE, col_select = cols_to_read)
+```
+
+```{r}
+all_dt_loaded
+```

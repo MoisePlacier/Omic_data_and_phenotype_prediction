@@ -14,13 +14,13 @@ analysis:
     - "RamifSyllep"
     - "BrAnglVert"
     - "Dia2015_sqrt"
-  use_residuals: true
-  n_iter: 4
-  subset_size: 5
-  seed: 12345
+  use_residuals: false
+  n_iter: 10
+  subset_size: 50
+  seed: 123
 
 cv:
   outer_folds: 5
 
 output:
-  save_dir: "results/VIP_scores_multi_residualtest"
+  save_dir: "results/VIP_scores_multi"

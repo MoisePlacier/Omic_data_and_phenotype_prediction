@@ -20,6 +20,10 @@ library(mixOmics)
 library(glmnet)
 ```
 
+La première problématique consiste à évaluer la valeur prédictive réelle des SNP sélectionnés par les différentes méthodes de scoring. L’objectif est de déterminer si les SNP classés dans le TOP K par VIP ou RF, en contexte phénotype brut ou résidu, permettent de construire des modèles prédictifs performants. 
+
+L’action à mener est d’entraîner des modèles ridge $Phénotype \sim SNP$ en utilisant uniquement ces sous-ensembles de SNP, avec une validation croisée stricte, puis de comparer les performances ($R^2$, RMSE) à celles rapportées dans la thèse et à des références construites sur des SNP tirés aléatoirement ou sur l’ensemble des marqueurs.
+
 ```{r}
 run_ridge_nested_cv <- function(
   X,
@@ -106,7 +110,9 @@ run_ridge_nested_cv <- function(
 
 ```{r}
 
-
+load("data/Phenotype.rda")
+load("data/localisation.rda")
+load("data/Genomic.rda")
 pheno <- as.data.table(Phenotype)
 loc_df <- as.data.table(localisation)
 geno <- as.data.table(Genomic)
@@ -324,4 +330,135 @@ ggplot(all_R2, aes(x = source, y = R2, fill = source)) +
   scale_y_continuous(limits = c(0,1)) +
   labs(x = "Méthode", y = expression(R^2), title = "Distribution du R² par méthode") +
   theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1,  size = rel(1.5)))
+```
+
+# SUR le PIPELINE !
+
+
+```{r}
+cols_to_read <- c(
+  "SNP", "phenotype", "method", "context",
+  "n_obs", "mean", "median", "sd", "q90", "q95", "max"
+)
+
+final_file <- "results/all_scores.parquet"
+all_dt_loaded <- read_parquet(final_file, as_data_table = TRUE, col_select = cols_to_read)
+
+# colonne 'mean' comme score global pour le ranking
+all_dt_loaded[, rank := frank(-median, ties.method = "min"), by = .(phenotype, method, context)]
+
+# normaliser le ranking sur 0-1 
+all_dt_loaded[, rank_norm := rank / max(rank), by = .(phenotype, method, context)]
+
+```
+
+
+```{r}
+run_ridge_from_scores <- function(
+  all_scores_dt,
+  phenotypes,
+  methods,
+  contexts,
+  topK,
+  X_full,
+  y_full,
+  K_outer = 5,
+  K_inner = 5,
+  seed = 123,
+  standardize = TRUE
+) {
+
+  library(data.table)
+
+  res_all <- list()
+
+  for (ph in phenotypes) {
+    for (m in methods) {
+      for (ctx in contexts) {
+
+        message(
+          "Running ridge | phenotype = ", ph,
+          " | method = ", m,
+          " | context = ", ctx
+        )
+
+        ## Sélection des TOP K SNPs
+        snp_sel <- all_scores_dt[
+          phenotype == ph &
+          method == m &
+          context == ctx
+        ][order(rank)][1:topK, SNP]
+
+        if (length(snp_sel) < 2) next
+
+        ## Sous-matrice X
+        X_sub <- X_full[, colnames(X_full) %in% snp_sel, drop = FALSE]
+
+        ## Run ridge nested CV
+        perf <- run_ridge_nested_cv(
+          X = X_sub,
+          y = y_full,
+          K_outer = K_outer,
+          K_inner = K_inner,
+          seed = seed,
+          standardize = standardize
+        )
+
+        perf_dt <- as.data.table(perf)
+        perf_dt[, `:=`(
+          phenotype = ph,
+          method = m,
+          context = ctx,
+          topK = topK,
+          n_snps = ncol(X_sub)
+        )]
+
+        res_all[[length(res_all) + 1]] <- perf_dt
+      }
+    }
+  }
+
+  return(rbindlist(res_all, fill = TRUE))
+}
+
+```
+
+
+## Selection d'un phéno x methode x contexte
+
+```{r}
+pheno_sel <- "Dia2015_sqrt"
+context <- "phenotype"
+method <- "VIP"
+
+dt <- all_dt_loaded[method == method & phenotype == pheno_sel & context == context,
+                      .(SNP, mean = mean, rank = rank)]
+dt
+```
+
+## Selection du subset
+
+```{r}
+K<- 2000
+top_K  <- dt[order(-mean)][1:K, SNP]
+length(top_K)
+
+X_sub <- X[, top_K, drop = FALSE]
+dim(X_sub)
+```
+
+## Run nested ridge
+
+```{r}
+res <- run_ridge_nested_cv(
+  X = X_sub,
+  y = y,
+  K_outer = 50,
+  K_inner = 10,
+  seed = 123
+)
+```
+
+```{r}
+summary(res)
 ```

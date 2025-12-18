@@ -1,0 +1,375 @@
+---
+title: "Performances_predictives_Ridge"
+format: html
+editor: visual
+---
+La première problématique consiste à évaluer la valeur prédictive réelle des SNP sélectionnés par les différentes méthodes de scoring. L’objectif est de déterminer si les SNP classés dans le TOP K par VIP ou RF, en contexte phénotype brut ou résidu, permettent de construire des modèles prédictifs performants et de comparer ces performances. 
+
+L’action à mener est d’entraîner des modèles ridge $Phénotype \sim SNP$ en utilisant uniquement ces sous-ensembles de SNP, avec une validation croisée stricte, puis de comparer les performances ($R^2$, RMSE) à celles rapportées dans la thèse et à des références construites sur des SNP tirés aléatoirement ou sur l’ensemble des marqueurs.
+
+```{r}
+library(pls)
+library(caret)
+library(data.table)
+library(parallel)
+library(doParallel)
+library(data.table)
+library(ggplot2)
+library(nnet)
+library(pls)
+library(FactoMineR)
+library(qqman)
+library(mixOmics)
+library(glmnet)
+```
+
+# Data
+
+```{r}
+load("data/Phenotype.rda")
+load("data/localisation.rda")
+load("data/Genomic.rda")
+pheno <- as.data.table(Phenotype)
+loc_df <- as.data.table(localisation)
+geno <- as.data.table(Genomic)
+geno[, ID := rownames(Genomic)]
+pheno[, ID := rownames(Phenotype)]
+merged <- merge(pheno, loc_df[, list(Population, ID)], by = "ID")
+merged <- merge(merged, geno, by = "ID")
+
+```
+
+
+# Scores
+
+```{r}
+cols_to_read <- c(
+  "SNP", "phenotype", "method", "context",
+  "n_obs", "mean", "median", "sd", "q90", "q95", "max")
+
+all_scores_dt <- read_parquet("results/all_scores.parquet", as_data_table = TRUE, col_select = cols_to_read)
+
+# colonne 'median' comme score global pour le ranking
+all_scores_dt[, rank := frank(-median, ties.method = "min"), by = .(phenotype, method, context)]
+
+```
+```{r}
+unique(all_scores_dt$phenotype)
+```
+
+
+```{r}
+run_ridge_nested_cv <- function(
+  X,
+  y,
+  K_outer = 5,
+  K_inner = 5,
+  seed = 123,
+  standardize = TRUE
+) {
+  
+  stopifnot(nrow(X) == length(y))
+  
+  set.seed(seed)
+  
+  library(caret)
+  library(glmnet)
+  
+  # Création des folds externes
+  outer_folds <- createFolds(y, k = K_outer, returnTrain = TRUE)
+  
+  results <- data.frame(
+    outer_fold = integer(),
+    lambda_opt = numeric(),
+    R2 = numeric(),
+    RMSE = numeric()
+  )
+  
+  for (f in seq_len(K_outer)) {
+    
+    # Split externe
+    train_idx <- outer_folds[[f]]
+    test_idx  <- setdiff(seq_along(y), train_idx)
+    
+    X_train <- X[train_idx, , drop = FALSE]
+    X_test  <- X[test_idx, , drop = FALSE]
+    y_train <- y[train_idx]
+    y_test  <- y[test_idx]
+    
+    # CV interne pour le choix du lambda
+    cv_inner <- cv.glmnet(
+      x = X_train,
+      y = y_train,
+      alpha = 0,                # Ridge
+      nfolds = K_inner,
+      standardize = standardize
+    )
+    
+    lambda_opt <- cv_inner$lambda.min
+    
+    # Modèle final entraîné sur tout le train externe
+    ridge_final <- glmnet(
+      x = X_train,
+      y = y_train,
+      alpha = 0,
+      lambda = lambda_opt,
+      standardize = standardize
+    )
+    
+    # Prédictions sur le test externe
+    y_pred <- as.vector(predict(ridge_final, newx = X_test))
+    
+    R2_test <- cor(y_test, y_pred)^2
+    RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+    
+    results <- rbind(
+      results,
+      data.frame(
+        outer_fold = f,
+        lambda_opt = lambda_opt,
+        R2 = R2_test,
+        RMSE = RMSE_test
+      )
+    )
+  }
+  
+  return(results)
+}
+
+```
+
+
+
+# Execution de la fonction 
+"CIRC2009","CIRC2011","HT2009","BudFlushSlope", "BrAnglVert","Dia2015_sqrt","RamifSyllep"
+
+
+```{r}
+run_ridge_from_scores <- function(
+  all_scores_dt,
+  phenotypes,
+  methods,
+  contexts,
+  topK,
+  X_full,
+  y_full,
+  K_outer = 5,
+  K_inner = 5,
+  seed = 123,
+  standardize = TRUE
+) {
+
+  library(data.table)
+
+  set.seed(seed)   # pour reproductibilité
+  res_all <- list()
+
+  for (ph in phenotypes) {
+            ## --- Ajouter le témoin aléatoire ---
+    snp_random <- sample(colnames(X_full), topK)
+    X_rand <- X_full[, snp_random, drop = FALSE]
+
+    perf_rand <- run_ridge_nested_cv(
+      X = X_rand,
+      y = y_full,
+      K_outer = K_outer,
+      K_inner = K_inner,
+      seed = seed + 1,  # décaler le seed pour varier
+      standardize = standardize
+        )
+
+    perf_rand_dt <- as.data.table(perf_rand)
+    perf_rand_dt[, `:=`(
+      phenotype = ph,
+      method = "Random",
+      context = "temoin",
+      topK = topK,
+      n_snps = ncol(X_rand)
+      )]
+
+    res_all[[length(res_all) + 1]] <- perf_rand_dt
+        
+    for (m in methods) {
+      for (ctx in contexts) {
+
+        message(
+          "Running ridge | phenotype = ", ph,
+          " | method = ", m,
+          " | context = ", ctx
+        )
+
+        ## Sélection des TOP K SNPs
+        snp_sel <- all_scores_dt[
+          phenotype == ph &
+          method == m &
+          context == ctx
+        ][order(rank)][1:topK, SNP]
+
+        if (length(snp_sel) < 2) next
+
+        ## Sous-matrice X
+        X_sub <- X_full[, colnames(X_full) %in% snp_sel, drop = FALSE]
+
+        ## Run ridge nested CV
+        perf <- run_ridge_nested_cv(
+          X = X_sub,
+          y = y_full,
+          K_outer = K_outer,
+          K_inner = K_inner,
+          seed = seed,
+          standardize = standardize
+        )
+
+        perf_dt <- as.data.table(perf)
+        perf_dt[, `:=`(
+          phenotype = ph,
+          method = m,
+          context = ctx,
+          topK = topK,
+          n_snps = ncol(X_sub)
+        )]
+
+        res_all[[length(res_all) + 1]] <- perf_dt
+      }
+    }
+  }
+
+  return(rbindlist(res_all, fill = TRUE))
+}
+
+```
+
+```{r}
+## Paramètres
+phenos_run   <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope")
+methods_run  <- c("RF")                        # méthodes à évaluer
+contexts_run <- c("phenotype", "residuals")    # contextes
+topK_run     <- 100
+K_outer_cv   <- 50
+K_inner_cv   <- 20
+seed_run     <- 123
+
+res_list <- list()
+
+for (ph in phenos_run) {
+
+  message("Processing phenotype: ", ph)
+
+  # Extraire le vecteur y pour le phénotype courant
+  y_run <- as.numeric(merged[[ph]])
+
+  # X reste la même matrice génomique
+  X_run <- as.matrix(merged[, 23:ncol(merged)])
+
+  # Appel de la fonction avec témoin aléatoire
+  perf_dt <- run_ridge_from_scores(
+    all_scores_dt = all_dt_loaded,
+    phenotypes    = ph,
+    methods       = methods_run,
+    contexts      = contexts_run,
+    topK          = topK_run,
+    X_full        = X_run,
+    y_full        = y_run,
+    K_outer       = K_outer_cv,
+    K_inner       = K_inner_cv,
+    seed          = seed_run,
+    standardize   = TRUE
+  )
+
+  res_list[[ph]] <- perf_dt
+}
+
+# Combiner tous les résultats en une seule data.table
+ridge_perf_all <- rbindlist(res_list, fill = TRUE)
+ridge_perf_all <- rbindlist(res_list, fill = TRUE)
+ridge_perf_all[, method_context := paste(method, context, sep = "_")]
+ridge_perf_all[, phenotype := factor(phenotype, levels = unique(phenotype))]
+
+```
+
+```{r}
+
+# Boxplot facetté par phénotype
+ggplot(ridge_perf_all, aes(x = method_context, y = R2, fill = context)) +
+  geom_boxplot() +
+  facet_wrap(~ phenotype, scales = "fixed") +   # axe Y fixe pour toutes les facettes
+  coord_cartesian(ylim = c(0, 1)) + 
+  labs(
+    x = "Méthode de scoring",
+    y = expression(R^2),
+    title = "performances ridge en fonction de la méthode de selection du top 100 SNP"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold")
+  ) +
+  scale_fill_brewer(palette = "Set2")
+```
+```{r}
+## Paramètres
+phenos_run   <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope")
+methods_run  <- c("RF")                        # méthodes à évaluer
+contexts_run <- c("phenotype", "residuals")    # contextes
+topK_run     <- 500
+K_outer_cv   <- 50
+K_inner_cv   <- 20
+seed_run     <- 123
+
+res_list <- list()
+
+for (ph in phenos_run) {
+
+  message("Processing phenotype: ", ph)
+
+  # Extraire le vecteur y pour le phénotype courant
+  y_run <- as.numeric(merged[[ph]])
+
+  # X reste la même matrice génomique
+  X_run <- as.matrix(merged[, 23:ncol(merged)])
+
+  # Appel de la fonction avec témoin aléatoire
+  perf_dt <- run_ridge_from_scores(
+    all_scores_dt = all_dt_loaded,
+    phenotypes    = ph,
+    methods       = methods_run,
+    contexts      = contexts_run,
+    topK          = topK_run,
+    X_full        = X_run,
+    y_full        = y_run,
+    K_outer       = K_outer_cv,
+    K_inner       = K_inner_cv,
+    seed          = seed_run,
+    standardize   = TRUE
+  )
+
+  res_list[[ph]] <- perf_dt
+}
+
+# Combiner tous les résultats en une seule data.table
+ridge_perf_500 <- rbindlist(res_list, fill = TRUE)
+ridge_perf_500 <- rbindlist(res_list, fill = TRUE)
+ridge_perf_500[, method_context := paste(method, context, sep = "_")]
+ridge_perf_500[, phenotype := factor(phenotype, levels = unique(phenotype))]
+
+```
+
+```{r}
+# Boxplot facetté par phénotype
+ggplot(ridge_perf_500, aes(x = method_context, y = R2, fill = context)) +
+  geom_boxplot() +
+  facet_wrap(~ phenotype, scales = "fixed") +   # axe Y fixe pour toutes les facettes
+  coord_cartesian(ylim = c(0, 1)) + 
+  labs(
+    x = "Méthode de scoring",
+    y = expression(R^2),
+    title = "performances ridge en fonction de la méthode de selection du top 500 SNP"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold")
+  ) +
+  scale_fill_brewer(palette = "Set2")
+```
+
