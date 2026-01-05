@@ -3,7 +3,8 @@ title: "Performances_predictives_Ridge"
 format: html
 editor: visual
 ---
-La première problématique consiste à évaluer la valeur prédictive réelle des SNP sélectionnés par les différentes méthodes de scoring. L’objectif est de déterminer si les SNP classés dans le TOP K par VIP ou RF, en contexte phénotype brut ou résidu, permettent de construire des modèles prédictifs performants et de comparer ces performances. 
+
+La première problématique consiste à évaluer la valeur prédictive réelle des SNP sélectionnés par les différentes méthodes de scoring. L’objectif est de déterminer si les SNP classés dans le TOP K par VIP ou RF, en contexte phénotype brut ou résidu, permettent de construire des modèles prédictifs performants et de comparer ces performances.
 
 L’action à mener est d’entraîner des modèles ridge $Phénotype \sim SNP$ en utilisant uniquement ces sous-ensembles de SNP, avec une validation croisée stricte, puis de comparer les performances ($R^2$, RMSE) à celles rapportées dans la thèse et à des références construites sur des SNP tirés aléatoirement ou sur l’ensemble des marqueurs.
 
@@ -39,24 +40,24 @@ merged <- merge(merged, geno, by = "ID")
 
 ```
 
-
 # Scores
 
 ```{r}
 cols_to_read <- c(
   "SNP", "phenotype", "method", "context",
-  "n_obs", "mean", "median", "sd", "q90", "q95", "max")
+  "n_obs", "mean", "median", "sd", "max")
 
-all_scores_dt <- read_parquet("results/all_scores.parquet", as_data_table = TRUE, col_select = cols_to_read)
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores.parquet", as_data_table = TRUE, col_select = cols_to_read)
 
 # colonne 'median' comme score global pour le ranking
-all_scores_dt[, rank := frank(-median, ties.method = "min"), by = .(phenotype, method, context)]
+all_scores_dt[, absmean := abs(mean)]
+all_scores_dt[, rank := frank(-absmean, ties.method = "min"), by = .(phenotype, method, context)]
 
 ```
+
 ```{r}
 unique(all_scores_dt$phenotype)
 ```
-
 
 ```{r}
 run_ridge_nested_cv <- function(
@@ -138,11 +139,9 @@ run_ridge_nested_cv <- function(
 
 ```
 
+# Execution de la fonction
 
-
-# Execution de la fonction 
 "CIRC2009","CIRC2011","HT2009","BudFlushSlope", "BrAnglVert","Dia2015_sqrt","RamifSyllep"
-
 
 ```{r}
 run_ridge_from_scores <- function(
@@ -197,6 +196,11 @@ run_ridge_from_scores <- function(
           " | method = ", m,
           " | context = ", ctx
         )
+        cat(
+          "RF | phenotype = ", ph,
+          " | method = ", m,
+          " | context = ", ctx
+        )
 
         ## Sélection des TOP K SNPs
         snp_sel <- all_scores_dt[
@@ -239,14 +243,17 @@ run_ridge_from_scores <- function(
 
 ```
 
+# Top 10
+
 ```{r}
 ## Paramètres
-phenos_run   <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope")
-methods_run  <- c("RF")                        # méthodes à évaluer
+phenos_run   <- c("CIRC2011","HT2009","BudFlushSlope","Dia2015_sqrt")
+methods_run  <- c("RF","VIP")                        # méthodes à évaluer
 contexts_run <- c("phenotype", "residuals")    # contextes
-topK_run     <- 100
+topK_run     <- 10
 K_outer_cv   <- 50
 K_inner_cv   <- 20
+
 seed_run     <- 123
 
 res_list <- list()
@@ -263,7 +270,211 @@ for (ph in phenos_run) {
 
   # Appel de la fonction avec témoin aléatoire
   perf_dt <- run_ridge_from_scores(
-    all_scores_dt = all_dt_loaded,
+    all_scores_dt = all_scores_dt,
+    phenotypes    = ph,
+    methods       = methods_run,
+    contexts      = contexts_run,
+    topK          = topK_run,
+    X_full        = X_run,
+    y_full        = y_run,
+    K_outer       = K_outer_cv,
+    K_inner       = K_inner_cv,
+    seed          = seed_run,
+    standardize   = TRUE
+  )
+
+  res_list[[ph]] <- perf_dt
+}
+
+# Combiner tous les résultats en une seule data.table
+ridge_perf_10 <- rbindlist(res_list, fill = TRUE)
+ridge_perf_10 <- rbindlist(res_list, fill = TRUE)
+ridge_perf_10[, method_context := paste(method, context, sep = "_")]
+ridge_perf_10[, phenotype := factor(phenotype, levels = unique(phenotype))]
+
+# Boxplot facetté par phénotype
+ggplot(ridge_perf_10, aes(x = method_context, y = R2, fill = context)) +
+  geom_boxplot() +
+  facet_wrap(~ phenotype, scales = "fixed") +   # axe Y fixe pour toutes les facettes
+  coord_cartesian(ylim = c(0, 1)) + 
+  labs(
+    x = "Méthode de scoring",
+    y = expression(R^2),
+    title = "performances ridge en fonction de la méthode de selection du top 100 SNP"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold")
+  ) +
+  scale_fill_brewer(palette = "Set2")
+
+```
+
+# Top 20
+
+```{r}
+## Paramètres
+phenos_run   <- c("CIRC2011","HT2009","BudFlushSlope","Dia2015_sqrt")
+methods_run  <- c("RF","VIP")                        # méthodes à évaluer
+contexts_run <- c("phenotype", "residuals")    # contextes
+topK_run     <- 50
+K_outer_cv   <- 50
+K_inner_cv   <- 20
+
+seed_run     <- 123
+
+res_list <- list()
+
+for (ph in phenos_run) {
+
+  message("Processing phenotype: ", ph)
+
+  # Extraire le vecteur y pour le phénotype courant
+  y_run <- as.numeric(merged[[ph]])
+
+  # X reste la même matrice génomique
+  X_run <- as.matrix(merged[, 23:ncol(merged)])
+
+  # Appel de la fonction avec témoin aléatoire
+  perf_dt <- run_ridge_from_scores(
+    all_scores_dt = all_scores_dt,
+    phenotypes    = ph,
+    methods       = methods_run,
+    contexts      = contexts_run,
+    topK          = topK_run,
+    X_full        = X_run,
+    y_full        = y_run,
+    K_outer       = K_outer_cv,
+    K_inner       = K_inner_cv,
+    seed          = seed_run,
+    standardize   = TRUE
+  )
+
+  res_list[[ph]] <- perf_dt
+}
+
+# Combiner tous les résultats en une seule data.table
+ridge_perf_20 <- rbindlist(res_list, fill = TRUE)
+ridge_perf_20 <- rbindlist(res_list, fill = TRUE)
+ridge_perf_20[, method_context := paste(method, context, sep = "_")]
+ridge_perf_20[, phenotype := factor(phenotype, levels = unique(phenotype))]
+
+# Boxplot facetté par phénotype
+ggplot(ridge_perf_20, aes(x = method_context, y = R2, fill = context)) +
+  geom_boxplot() +
+  facet_wrap(~ phenotype, scales = "fixed") +   # axe Y fixe pour toutes les facettes
+  coord_cartesian(ylim = c(0, 1)) + 
+  labs(
+    x = "Méthode de scoring",
+    y = expression(R^2),
+    title = "performances ridge en fonction de la méthode de selection du top 100 SNP"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold")
+  ) +
+  scale_fill_brewer(palette = "Set2")
+
+```
+
+# Top 50
+
+```{r}
+## Paramètres
+phenos_run   <- c("CIRC2011","HT2009","BudFlushSlope","Dia2015_sqrt")
+methods_run  <- c("RF","VIP")                        # méthodes à évaluer
+contexts_run <- c("phenotype", "residuals")    # contextes
+topK_run     <- 50
+K_outer_cv   <- 50
+K_inner_cv   <- 20
+
+seed_run     <- 123
+
+res_list <- list()
+
+for (ph in phenos_run) {
+
+  message("Processing phenotype: ", ph)
+
+  # Extraire le vecteur y pour le phénotype courant
+  y_run <- as.numeric(merged[[ph]])
+
+  # X reste la même matrice génomique
+  X_run <- as.matrix(merged[, 23:ncol(merged)])
+
+  # Appel de la fonction avec témoin aléatoire
+  perf_dt <- run_ridge_from_scores(
+    all_scores_dt = all_scores_dt,
+    phenotypes    = ph,
+    methods       = methods_run,
+    contexts      = contexts_run,
+    topK          = topK_run,
+    X_full        = X_run,
+    y_full        = y_run,
+    K_outer       = K_outer_cv,
+    K_inner       = K_inner_cv,
+    seed          = seed_run,
+    standardize   = TRUE
+  )
+
+  res_list[[ph]] <- perf_dt
+}
+
+# Combiner tous les résultats en une seule data.table
+ridge_perf_all <- rbindlist(res_list, fill = TRUE)
+ridge_perf_all <- rbindlist(res_list, fill = TRUE)
+ridge_perf_all[, method_context := paste(method, context, sep = "_")]
+ridge_perf_all[, phenotype := factor(phenotype, levels = unique(phenotype))]
+
+# Boxplot facetté par phénotype
+ggplot(ridge_perf_all, aes(x = method_context, y = R2, fill = context)) +
+  geom_boxplot() +
+  facet_wrap(~ phenotype, scales = "fixed") +   # axe Y fixe pour toutes les facettes
+  coord_cartesian(ylim = c(0, 1)) + 
+  labs(
+    x = "Méthode de scoring",
+    y = expression(R^2),
+    title = "performances ridge en fonction de la méthode de selection du top 100 SNP"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold")
+  ) +
+  scale_fill_brewer(palette = "Set2")
+
+```
+
+# Top 100
+
+```{r}
+## Paramètres
+phenos_run   <- c("CIRC2011","HT2009","BudFlushSlope","Dia2015_sqrt")
+methods_run  <- c("RF","VIP")                        # méthodes à évaluer
+contexts_run <- c("phenotype", "residuals")    # contextes
+topK_run     <- 100
+K_outer_cv   <- 50
+K_inner_cv   <- 20
+
+seed_run     <- 123
+
+res_list <- list()
+
+for (ph in phenos_run) {
+
+  message("Processing phenotype: ", ph)
+
+  # Extraire le vecteur y pour le phénotype courant
+  y_run <- as.numeric(merged[[ph]])
+
+  # X reste la même matrice génomique
+  X_run <- as.matrix(merged[, 23:ncol(merged)])
+
+  # Appel de la fonction avec témoin aléatoire
+  perf_dt <- run_ridge_from_scores(
+    all_scores_dt = all_scores_dt,
     phenotypes    = ph,
     methods       = methods_run,
     contexts      = contexts_run,
@@ -306,15 +517,17 @@ ggplot(ridge_perf_all, aes(x = method_context, y = R2, fill = context)) +
   ) +
   scale_fill_brewer(palette = "Set2")
 ```
+
+# Top 500
+
 ```{r}
 ## Paramètres
-phenos_run   <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope")
-methods_run  <- c("RF")                        # méthodes à évaluer
+phenos_run   <- c("CIRC2011","HT2009","BudFlushSlope","Dia2015_sqrt")
+methods_run  <- c("RF","VIP")                        # méthodes à évaluer
 contexts_run <- c("phenotype", "residuals")    # contextes
 topK_run     <- 500
 K_outer_cv   <- 50
 K_inner_cv   <- 20
-seed_run     <- 123
 
 res_list <- list()
 
@@ -330,7 +543,7 @@ for (ph in phenos_run) {
 
   # Appel de la fonction avec témoin aléatoire
   perf_dt <- run_ridge_from_scores(
-    all_scores_dt = all_dt_loaded,
+    all_scores_dt = all_scores_dt,
     phenotypes    = ph,
     methods       = methods_run,
     contexts      = contexts_run,
@@ -372,4 +585,3 @@ ggplot(ridge_perf_500, aes(x = method_context, y = R2, fill = context)) +
   ) +
   scale_fill_brewer(palette = "Set2")
 ```
-

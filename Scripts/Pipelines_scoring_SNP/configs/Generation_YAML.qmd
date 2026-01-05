@@ -8,7 +8,9 @@ editor: visual
 library(yaml)
 ```
 
-on au total $p = 217{,}000$ SNPs. Ensuite ![Performance de la PLS pour le phénotype CIRC2009 en fonction de la taille du subset](../Plots/Performance_PLS_Subset_Size.png) 5000 SNP est un bon compromis entre taille du subset et performance prédictive
+on au total $p = 217{,}000$ SNPs. Ensuite ![Performance de la PLS pour le phénotype CIRC2009 en fonction de la taille du subset](../Plots/Performance_PLS_Subset_Size.png) 
+
+5000 SNP est un bon compromis entre taille du subset et performance prédictive
 
 $n_\text{subset} = 5{,}000$ SNPs sélectionnés à chaque itération
 

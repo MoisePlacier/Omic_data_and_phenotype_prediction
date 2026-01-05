@@ -2,7 +2,7 @@ data:
   phenotype: "data/Phenotype.rda"
   genomic: "data/Genomic.rda"
   localisation: "data/localisation.rda"
-  residuals: "data/LM_Pheno_pop_Residuals.rds"  # optionnel
+  residuals: "data/LM_Pheno_pop_Residuals.rds"
 
 analysis:
   phenotypes:
@@ -15,8 +15,8 @@ analysis:
     - "BrAnglVert"
     - "Dia2015_sqrt"
   use_residuals: false   # true = residuals, false = phénotypes bruts
-  n_iter: 20
-  subset_size: 500
+  n_iter: 870
+  subset_size: 5000
   seed: 123
 
 cv:

@@ -30,178 +30,227 @@ y <- as.numeric(y)
 X <- as.matrix(merged[, 23:ncol(merged)])
 ```
 
-
 ```{r}
-set.seed(123)
+run_rf_nested_cv <- function(
+  X,
+  y,
+  rf_grid,
+  K_outer = 5,
+  K_inner = 5,
+  seed = 123
+) {
 
-K_outer <- 20
-K_inner <- 10
+  stopifnot(nrow(X) == length(y))
+  set.seed(seed)
 
-outer_folds <- createFolds(y, k = K_outer, returnTrain = TRUE)
+  library(caret)
+  library(ranger)
+  library(data.table)
 
-results <- data.table(
-  outer_fold = integer(),
-  R2 = numeric(),
-  RMSE = numeric(),
-  mtry = integer(),
-  min.node.size = integer(),
-  num.trees = integer()
-)
+  outer_folds <- createFolds(y, k = K_outer, returnTrain = TRUE)
 
-predictions_all <- data.table(
-  y_obs = numeric(),
-  y_pred = numeric(),
-  outer_fold = integer()
-)
-```
+  results <- data.table()
 
-# subset importance 
+  for (f in seq_len(K_outer)) {
+    train_idx <- outer_folds[[f]]
+    test_idx  <- setdiff(seq_along(y), train_idx)
 
-```{r}
+    X_train <- as.data.frame(X[train_idx, , drop = FALSE])
+    X_test  <- as.data.frame(X[test_idx,  , drop = FALSE])
+    y_train <- y[train_idx]
+    y_test  <- y[test_idx]
 
-SAVE_DIR_RF <- "results_random_RF"
-imp_all <- rbindlist(
-  lapply(list.files(SAVE_DIR_RF, pattern = "imp_RF", full.names = TRUE), readRDS)
-)
+    ## ---------- CV interne ----------
+    inner_folds <- createFolds(y_train, k = K_inner, returnTrain = TRUE)
 
-rf_summary <- imp_all[, .(
-  mean_imp = mean(abs(importance), na.rm = TRUE),
-  sd_imp   = sd(importance, na.rm = TRUE),
-  freq     = .N
-), by = SNP]
-head(rf_summary)
+    grid_perf <- copy(rf_grid)
+    grid_perf[, RMSE := NA_real_]
 
-IMP_THRESHOLD <- 0.9
+    for (g in seq_len(nrow(rf_grid))) {
 
-# Filtrer les SNP sur le VIP moyen
+      rmse_inner <- numeric(K_inner)
 
-important_snps <- rf_summary[mean_imp > IMP_THRESHOLD, SNP]
-X_sub <- X[, important_snps, drop = FALSE]
+      for (k in seq_len(K_inner)) {
 
+        tr_idx <- inner_folds[[k]]
+        te_idx <- setdiff(seq_along(y_train), tr_idx)
 
-length(important_snps)
-```
-```{r}
-rf_grid <- data.table(
-  mtry = c(5, 10, 20, 30),
-  min.node.size = c(1, 5, 10),
-  num.trees = c(500, 1000)
-)
-```
+        rf_inner <- ranger(
+          x = X_train[tr_idx, ],
+          y = y_train[tr_idx],
+          num.trees = rf_grid$num.trees[g],
+          mtry = rf_grid$mtry[g],
+          min.node.size = rf_grid$min.node.size[g],
+          importance = "none",
+          num.threads = 1,
+          seed = seed
+        )
 
+        y_pred_inner <- predict(
+          rf_inner,
+          X_train[te_idx, ]
+        )$predictions
 
+        rmse_inner[k] <- sqrt(mean((y_train[te_idx] - y_pred_inner)^2))
+      }
 
-```{r}
-for (f in seq_len(K_outer)) {
-
-  cat("Outer fold:", f, "\n")
-
-  train_idx <- outer_folds[[f]]
-  test_idx  <- setdiff(seq_along(y), train_idx)
-
-  X_train <- as.data.frame(X_sub[train_idx, , drop = FALSE])
-  X_test  <- as.data.frame(X_sub[test_idx, , drop = FALSE])
-  y_train <- y[train_idx]
-  y_test  <- y[test_idx]
-
-  # ---------- CV interne ----------
-  inner_folds <- createFolds(y_train, k = K_inner, returnTrain = TRUE)
-
-  grid_perf <- copy(rf_grid)
-  grid_perf[, RMSE := NA_real_]
-
-  for (g in seq_len(nrow(rf_grid))) {
-
-    rmse_inner <- numeric(K_inner)
-
-    for (k in seq_len(K_inner)) {
-
-      tr_idx <- inner_folds[[k]]
-      te_idx <- setdiff(seq_along(y_train), tr_idx)
-
-      rf_inner <- ranger(
-        x = X_train[tr_idx, ],
-        y = y_train[tr_idx],
-        num.trees = rf_grid$num.trees[g],
-        mtry = rf_grid$mtry[g],
-        min.node.size = rf_grid$min.node.size[g],
-        importance = "none",
-        num.threads = 1
-      )
-
-      y_pred_inner <- predict(rf_inner, X_train[te_idx, ])$predictions
-      rmse_inner[k] <- sqrt(mean((y_train[te_idx] - y_pred_inner)^2))
+      grid_perf$RMSE[g] <- mean(rmse_inner)
     }
 
-    grid_perf$RMSE[g] <- mean(rmse_inner)
-  }
+    ## Hyperparamètres optimaux
+    best <- grid_perf[which.min(RMSE)]
 
-  # Hyperparamètres optimaux
-  best <- grid_perf[which.min(RMSE)]
-
-  # ---------- Modèle final ----------
-  rf_final <- ranger(
-    x = X_train,
-    y = y_train,
-    num.trees = best$num.trees,
-    mtry = best$mtry,
-    min.node.size = best$min.node.size,
-    importance = "permutation",
-    num.threads = 1
-  )
-
-  y_pred <- predict(rf_final, X_test)$predictions
-
-  R2_test <- cor(y_test, y_pred)^2
-  RMSE_test <- sqrt(mean((y_test - y_pred)^2))
-
-  results <- rbind(
-    results,
-    data.table(
-      outer_fold = f,
-      R2 = R2_test,
-      RMSE = RMSE_test,
+    rf_final <- ranger(
+      x = X_train,
+      y = y_train,
+      num.trees = best$num.trees,
       mtry = best$mtry,
       min.node.size = best$min.node.size,
-      num.trees = best$num.trees
+      importance = "none",
+      num.threads = 1,
+      seed = seed
     )
-  )
 
-  predictions_all <- rbind(
-    predictions_all,
-    data.table(
-      y_obs = y_test,
-      y_pred = y_pred,
-      outer_fold = f
+    y_pred <- predict(rf_final, X_test)$predictions
+
+    R2_test   <- cor(y_test, y_pred)^2
+    RMSE_test <- sqrt(mean((y_test - y_pred)^2))
+
+    results <- rbind(
+      results,
+      data.table(
+        outer_fold = f,
+        R2 = R2_test,
+        RMSE = RMSE_test,
+        mtry = best$mtry,
+        min.node.size = best$min.node.size,
+        num.trees = best$num.trees
+      )
     )
-  )
+  }
+
+  return(results)
 }
 
 ```
 
+```{r}
+run_rf_from_scores <- function(
+  all_scores_dt,
+  phenotypes,
+  methods,
+  contexts,
+  topK,
+  X_full,
+  y_full,
+  rf_grid,
+  K_outer = 5,
+  K_inner = 5,
+  seed = 123
+) {
+
+  library(data.table)
+  set.seed(seed)
+
+  res_all <- list()
+
+  for (ph in phenotypes) {
+
+    ## ---------- Témoin aléatoire ----------
+    snp_random <- sample(colnames(X_full), topK)
+    X_rand <- X_full[, snp_random, drop = FALSE]
+
+    perf_rand <- run_rf_nested_cv(
+      X = X_rand,
+      y = y_full,
+      rf_grid = rf_grid,
+      K_outer = K_outer,
+      K_inner = K_inner,
+      seed = seed + 1
+    )
+
+    perf_rand[, `:=`(
+      phenotype = ph,
+      method = "Random",
+      context = "temoin",
+      topK = topK,
+      n_snps = ncol(X_rand)
+    )]
+
+    res_all[[length(res_all) + 1]] <- perf_rand
+
+    for (m in methods) {
+      for (ctx in contexts) {
+
+        message(
+          "RF | phenotype = ", ph,
+          " | method = ", m,
+          " | context = ", ctx
+        )
+
+        snp_sel <- all_scores_dt[
+          phenotype == ph &
+          method == m &
+          context == ctx
+        ][order(rank)][1:topK, SNP]
+
+        if (length(snp_sel) < 2) next
+
+        X_sub <- X_full[, colnames(X_full) %in% snp_sel, drop = FALSE]
+
+        perf <- run_rf_nested_cv(
+          X = X_sub,
+          y = y_full,
+          rf_grid = rf_grid,
+          K_outer = K_outer,
+          K_inner = K_inner,
+          seed = seed
+        )
+
+        perf[, `:=`(
+          phenotype = ph,
+          method = m,
+          context = ctx,
+          topK = topK,
+          n_snps = ncol(X_sub)
+        )]
+
+        res_all[[length(res_all) + 1]] <- perf
+      }
+    }
+  }
+
+  return(rbindlist(res_all, fill = TRUE))
+}
+
+```
 
 ```{r}
-summary(results$R2)
-mean(results$R2)
-
-summary(results$RMSE)
-mean(results$RMSE)
+rf_grid <- data.table(
+  num.trees = c(500, 1000),
+  mtry = c(10, 50, 100),
+  min.node.size = c(1, 5, 10)
+)
 ```
-```{r}
-boxplot(results$R2)
-```
-
 
 ```{r}
-ggplot(predictions_all, aes(x = y_obs, y = y_pred, colour = merged$Population)) +
-  geom_point(alpha = 0.6, size = 2) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "black") +
-  theme_bw() +
-  labs(
-    x = "Observed phenotype",
-    y = "Predicted phenotype",
-    colour = "Population",
-    title = "Random Forest – Observed vs Predicted (Outer CV)"
-  )
-```
+for (f in seq_len(K_outer)) { cat("Outer fold:", f, "\n") train_idx <- outer_folds[[f]] test_idx <- setdiff(seq_along(y), train_idx) X_train <- as.data.frame(X_sub[train_idx, , drop = FALSE]) X_test <- as.data.frame(X_sub[test_idx, , drop = FALSE]) y_train <- y[train_idx] y_test <- y[test_idx] # ---------- CV interne ---------- 
+inner_folds <- createFolds(y_train, k = K_inner, returnTrain = TRUE) 
+grid_perf <- copy(rf_grid) 
+grid_perf[, RMSE := NA_real_] 
+for (g in seq_len(nrow(rf_grid))){ rmse_inner <- numeric(K_inner) for (k in seq_len(K_inner)) 
+  { tr_idx <- inner_folds[[k]] 
+  te_idx <- setdiff(seq_along(y_train), tr_idx) 
+  rf_inner <- ranger( x = X_train[tr_idx, ], y = y_train[tr_idx], num.trees = rf_grid$num.trees[g], mtry = rf_grid$mtry[g], min.node.size = rf_grid$min.node.size[g], importance = "none", num.threads = 1 ) 
+  y_pred_inner <- predict(rf_inner, X_train[te_idx, ])$predictions 
+  rmse_inner[k] <- sqrt(mean((y_train[te_idx] - y_pred_inner)^2)) } 
+grid_perf$RMSE[g] <- mean(rmse_inner) } # Hyperparamètres optimaux ``
 
+best <- grid_perf[which.min(RMSE)] # ---------- Modèle final ---------- 
+rf_final <- ranger( x = X_train, y = y_train, num.trees = best$num.trees, mtry = best$mtry, min.node.size = best$min.node.size, importance = "permutation", num.threads = 1 ) 
+y_pred <- predict(rf_final, X_test)$predictions 
+R2_test <- cor(y_test, y_pred)^2 
+RMSE_test <- sqrt(mean((y_test - y_pred)^2)) 
+results <- rbind( results, data.table( outer_fold = f, R2 = R2_test, RMSE = RMSE_test, mtry = best$mtry, min.node.size = best$min.node.size, num.trees = best$num.trees ) ) 
+predictions_all <- rbind( predictions_all, data.table( y_obs = y_test, y_pred = y_pred, outer_fold = f ) ) }
+```

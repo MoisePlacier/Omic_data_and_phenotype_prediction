@@ -1,0 +1,244 @@
+---
+title: "performances"
+format: html
+editor: visual
+---
+
+```{r}
+library(ranger)
+library(caret)
+library(data.table)
+library(ggplot2)
+source("R/run_ridge.R")
+source("R/run_rf.R")
+source("R/run_models_from_scores.R")
+```
+
+# data 
+```{r}
+load("data/Phenotype.rda")
+load("data/localisation.rda")
+load("data/Genomic.rda")
+
+pheno_dt <- as.data.table(Phenotype, keep.rownames = "ID")
+geno_dt  <- as.data.table(Genomic,   keep.rownames = "ID")
+loc_dt   <- as.data.table(localisation)
+
+X_full <- as.matrix(
+  geno_dt[, !"ID"]
+)
+rownames(X_full) <- geno_dt$ID
+
+cols_to_read <- c(
+  "SNP", "phenotype", "method", "context",
+  "n_obs", "mean", "median", "sd", "max")
+
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores.parquet", as_data_table = TRUE, col_select = cols_to_read)
+
+# colonne 'mean' comme score global pour le ranking
+all_scores_dt[, absmean := abs(mean)]
+all_scores_dt[, rank := frank(-absmean, ties.method = "min"), by = .(phenotype, method, context)]
+
+```
+
+
+
+```{r}
+phenos_run   <- c("BudFlushSlope","HT2009","Dia2015_sqrt","BrAnglVert","CIRC2011","RamifSyllep")
+methods_run  <- c("RF","VIP")                        # méthodes à évaluer
+contexts_run <- c( "residuals","phenotype")    # contextes
+```
+
+```{r message=TRUE}
+ridge_perf <- run_model_from_scores(
+  all_scores_dt = all_scores_dt,
+  phenotypes = phenos_run,
+  methods = methods_run,
+  contexts = contexts_run,
+  topK = 1000 ,
+  X_full = X_full,
+  y_full = pheno_dt,
+  model_name = "ridge",
+  model_fun = run_ridge_model,
+  model_params = list(standardize = TRUE),
+  K_outer = 5,
+  K_inner = 5
+)
+
+```
+
+
+# Perf avec la médiane pour la ridge regression 
+
+```{r}
+library(data.table)
+library(ggplot2)
+ridge_perf[, method_context := paste(method, context, sep = "_")]
+# Calcul des médianes par groupe exact
+med_dt <- ridge_perf[
+  ,
+  .(R2_median = median(R2, na.rm = TRUE)),
+  by = .(method_context, context, phenotype, model)
+]
+```
+
+
+```{r}
+ggplot(ridge_perf, aes(x = method_context, y = R2, fill = context)) +
+  geom_boxplot() +
+  geom_text(
+    data = med_dt,
+    aes(
+      x = method_context,
+      y = R2_median,
+      label = sprintf("%.2f", R2_median)
+    ),
+    vjust = -2.4,
+    size = 4,
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(~ phenotype + model, scales = "fixed") +
+  coord_cartesian(ylim = c(0, 1)) +
+  labs(
+    x = "Méthode de scoring",
+    y = expression(R^2),
+    title = "Performances ridge en fonction de la méthode de sélection du top 100 SNP"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold")
+  ) +
+  scale_fill_brewer(palette = "Set2")
+
+```
+
+```{r}
+rf_grid <- data.table(
+  num.trees = c(200, 500),
+  mtry = c(3, 9 , 25),
+  min.node.size = c(1, 10)
+)
+phenos_run   <- c("BudFlushSlope","HT2009","Dia2015_sqrt","BrAnglVert","CIRC2011","RamifSyllep")
+methods_run  <- c("RF","VIP")                        # méthodes à évaluer
+contexts_run <- c( "residuals","phenotype")    # contextes
+
+rf_perf <- run_model_from_scores(
+  all_scores_dt = all_scores_dt,
+  phenotypes = phenos_run,
+  methods = methods_run,
+  contexts = contexts_run,
+  topK = 1000,
+  X_full = X_full,
+  y_full = pheno_dt,
+  model_name = "rf",
+  model_fun = run_rf_model,
+  model_params = list(
+    rf_grid = rf_grid
+  ),
+  K_outer = 5,
+  K_inner = 5
+)
+
+```
+
+
+```{r}
+rf_perf[, method_context := paste(method, context, sep = "_")]
+
+med_dt <- rf_perf[
+  ,
+  .(R2_median = median(R2, na.rm = TRUE)),
+  by = .(method_context, context, phenotype, model)
+]
+
+ggplot(rf_perf, aes(x = method_context, y = R2, fill = context)) +
+  geom_boxplot() +
+  geom_text(
+    data = med_dt,
+    aes(
+      x = method_context,
+      y = R2_median,
+      label = sprintf("%.2f", R2_median)
+    ),
+    vjust = -2.4,
+    size = 4,
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(~ phenotype + model, scales = "fixed") +
+  coord_cartesian(ylim = c(0, 1)) +
+  labs(
+    x = "Méthode de scoring",
+    y = expression(R^2),
+    title = "Performances RF en fonction de la méthode de sélection du top 100 SNP"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold")
+  ) +
+  scale_fill_brewer(palette = "Set2")
+
+```
+```{r}
+library(ggplot2)
+library(data.table)
+```
+
+```{r}
+ridge_perf
+```
+
+```{r}
+perf_dt
+```
+
+
+# Comparaison Ridge et RF 
+
+```{r}
+# Filtrage sur RF_residuals
+ridge_perf_sub <- ridge_perf[method_context == "RF_residuals"]
+rf_perf_sub    <- rf_perf[method_context == "RF_residuals"]
+
+# Ajouter colonne modèle
+ridge_perf_sub[, model := "Ridge"]
+rf_perf_sub[, model := "RF"]
+
+# Combiner avec rbindlist (fill = TRUE si colonnes diffèrent)
+perf_dt <- rbindlist(list(ridge_perf_sub, rf_perf_sub), fill = TRUE)
+
+# Calcul des médianes pour annoter
+med_dt <- perf_dt[, .(R2_median = median(R2, na.rm = TRUE)),  
+                  by = .(phenotype, model, method_context)]
+
+# Plot
+ggplot(perf_dt, aes(x = model, y = R2, fill = model)) +  # ici x = model plutôt que method_context
+  geom_boxplot() +
+  geom_text(
+    data = med_dt,
+    aes(
+      x = model,
+      y = R2_median,
+      label = sprintf("%.2f", R2_median)
+    ),
+    vjust = -1.5,
+    size = 4,
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(~ phenotype , scales = "fixed") +
+  coord_cartesian(ylim = c(0, 1)) +
+  labs(
+    x = "Modèle",
+    y = expression(R^2),
+    title = "Performances des modèles avec le top 1000 SNP"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold")
+  ) +
+  scale_fill_brewer(palette = "Set2")
+
+```
+

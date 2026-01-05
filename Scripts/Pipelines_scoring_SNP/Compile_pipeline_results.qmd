@@ -6,9 +6,9 @@ editor: visual
 
 liste des fichiers corrupted :
 
-"results/RF_scores_res/RF_Rust/RF_scores_all_Rust.rds" 
+"results/RF_scores_res/RF_Rust/RF_scores_all_Rust.rds"
 
-results/RF_scores/RF_Rust/RF_scores_all_Rust.rds" 
+results/RF_scores/RF_Rust/RF_scores_all_Rust.rds"
 
 results/VIP_scores/VIP_CIRC2009/VIP_scores_all_CIRC2009.rds
 
@@ -84,7 +84,6 @@ read_score_dir <- function(root, method, context, score_col) {
         mean       = mean(get(score_col)),
         median     = median(get(score_col)),
         sd         = sd(get(score_col)),
-        q90        = quantile(get(score_col), 0.90),
         q95        = quantile(get(score_col), 0.95),
         max        = max(get(score_col))
       ),
@@ -170,7 +169,7 @@ library(arrow)
 
 ```{r}
 tmp_file <- tempfile(fileext = ".parquet")
-write_parquet(all_dt, tmp_file)
+write_parquet(all_scores, tmp_file)
 
 # Puis on déplace le fichier temporaire vers le chemin final
 final_file <- "results/all_scores.parquet"
