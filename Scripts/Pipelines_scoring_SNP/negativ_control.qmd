@@ -1,0 +1,179 @@
+---
+title: "negative_control"
+format: html
+editor: visual
+---
+```{r}
+library(data.table)
+library(caret)
+library(ranger)
+library(parallel)
+library(doParallel)
+library(yaml)
+library(data.table)
+library(ggplot2)
+library(caret)
+library(nnet)
+library(pls)
+library(FactoMineR)
+library(qqman)
+library(mixOmics)
+```
+
+```{r}
+Pheno_FILE <- "../data/Phenotype.rda"
+load(Pheno_FILE)
+pheno_all <- as.data.table(Phenotype) 
+```
+
+
+
+
+# Negative control using a simulated null phenotype
+
+
+```{r}
+set.seed(2026)
+
+pheno_all[, pheno_null := rnorm(.N, mean = 0, sd = 1)]
+
+hist(pheno_all$pheno_null)
+```
+
+
+# Kinship-aware negative control
+
+On décompose la matrice de kinship (SVD). On génère un signal aléatoire sur chacun de ces axes, proportionnel à son importance, puis on les recombine pour obtenir un phénotype simulé dont la similarité entre individus reflète exactement la structure génétique globale. Un bruit individuel est ensuite ajouté.
+
+Le phénotype pour un individu est donc la somme, sur tous les axes génétiques, de (position génétique de l’individu sur l’axe) × (effet aléatoire de cet axe), plus un bruit individuel.
+
+```{r}
+Kinship_FILE <- "../data/Kinship_Poplar.rda"
+load(Kinship_FILE)
+K <- as.data.table(Kinship_Poplar)
+```
+
+## SVD matrice Kinship
+
+```{r}
+eig <- eigen(K, symmetric = TRUE)
+U <- eig$vectors           
+lambda <- eig$values       
+## Génération du phénotype 
+set.seed(2010)
+
+z <- rnorm(length(lambda), sd=1)  # coefficient aléatoire par composante
+g <- U %*% (sqrt(lambda) * z) # Pour chaque individu : somme des loadings individuels multipliés par un effet aléatoire par composante, pondéré par la racine de l’inertie de la composante
+
+### Ajout d'un bruit sur les individus
+
+var_g <- var(as.numeric(g))
+var_g
+h2_target <- 0.5   # Le bruit représente 50 % de variance populationnelle cf R^2 des modèles lm(phenos ~ pop)
+
+sigma_e2 <- var_g * (1 - h2_target) / h2_target
+sigma_e  <- sqrt(sigma_e2)
+sigma_e
+```
+
+
+```{r}
+e <- rnorm(nrow(K), sd = sigma_e)
+
+pheno_null_pop <- as.numeric(g + e)
+pheno_all[, pheno_kin_aware := pheno_null_pop]
+
+hist(pheno_all$pheno_kin_aware)
+```
+# Population-aware negative control
+
+```{r}
+Loc_FILE <- "../data/localisation.rda"
+load(Loc_FILE)
+loc_df<- as.data.table(localisation)
+
+pheno_all[, ID := rownames(Phenotype)]
+
+merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
+
+set.seed(2026)
+
+populations <- merged$Population
+unique_pop <- unique(populations)
+
+# Variance des effets population
+sigma_pop <- 1
+sigma_e   <- 1
+
+# Tirage des effets par population
+pop_effects <- rnorm(length(unique_pop), mean=0, sd=sigma_pop)
+names(pop_effects) <- unique_pop
+
+# Tirage du phénotype par individu et Ajout du phénotype population-aware
+pheno_all[, pheno_pop_aware := pop_effects[merged$Population] + rnorm(.N, sd = sigma_e)]
+
+hist(pheno_all$pheno_pop_aware)
+```
+
+## Save
+
+
+```{r}
+saveRDS(pheno_all, file = "../data/pheno_null.rds")
+```
+
+
+
+
+# Petit Contrôle avec un LM ! 
+
+## import des datas
+
+```{r}
+Genomic_FILE <- "../data/Genomic.rda"
+load(Genomic_FILE)
+geno <- as.data.table(Genomic)
+
+Loc_FILE <- "../data/localisation.rda"
+load(Loc_FILE)
+loc_df<- as.data.table(localisation)
+
+pheno <- as.data.table(pheno_all)
+
+geno[, ID := rownames(Genomic)]
+pheno[, ID := rownames(Phenotype)]
+
+merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
+
+```
+
+
+## LM (Pheno \~ population )
+
+```{r}
+df <- as.data.table(merged)
+
+phenos <- names(df)[sapply(df, is.numeric)]
+phenos <- setdiff(phenos, c("class_index","Lat","Lgn","ID"))
+
+get_r2 <- function(var) {
+  form<- as.formula(paste(var, "~ Population"))
+  mod<- lm(form, data = df)
+  summary(mod)$r.squared
+}
+
+r2_values<- data.table(
+  phenotype = phenos,
+  r2= sapply(phenos, get_r2))
+
+ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
+  geom_point(size = 3) +
+  geom_segment(aes(x = phenotype, xend = phenotype, y = 0, yend = r2)) +
+  coord_flip() +
+  ylab("R² lm(Phénotype ~ Population)") +
+  xlab("Caractère phénotypique") +
+  theme_minimal()
+```
+
+Mince ! Lorsque l'on créé un phénotype avec 50% de variance expliquée par la kinship, le modèle simple LM (phéno kinship ~ Population) à un R^2 très faible (0.1)... Cela signifie que la corrélation entre les catégories Population et Kinship sont plutot faible finalement ...
+

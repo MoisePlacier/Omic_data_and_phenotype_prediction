@@ -279,7 +279,6 @@ ggsave(
 )
 ```
 
-
 ```{r}
 setDT(results)
 compact_summary <- results[

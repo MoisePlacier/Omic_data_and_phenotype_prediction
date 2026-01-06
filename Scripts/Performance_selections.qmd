@@ -170,7 +170,7 @@ ggplot(rf_perf, aes(x = method_context, y = R2, fill = context)) +
   labs(
     x = "Méthode de scoring",
     y = expression(R^2),
-    title = "Performances RF en fonction de la méthode de sélection du top 100 SNP"
+    title = "Performances RF en fonction de la méthode de sélection du top 1000 SNP"
   ) +
   theme_minimal() +
   theme(
@@ -189,8 +189,9 @@ library(data.table)
 ridge_perf
 ```
 
+
 ```{r}
-perf_dt
+rf_perf
 ```
 
 
@@ -198,8 +199,8 @@ perf_dt
 
 ```{r}
 # Filtrage sur RF_residuals
-ridge_perf_sub <- ridge_perf[method_context == "RF_residuals"]
-rf_perf_sub    <- rf_perf[method_context == "RF_residuals"]
+ridge_perf_sub <- ridge_perf[method_context %in% c( "RF_residuals")]
+rf_perf_sub    <- rf_perf[method_context %in% c( "RF_residuals")]
 
 # Ajouter colonne modèle
 ridge_perf_sub[, model := "Ridge"]
@@ -231,7 +232,7 @@ ggplot(perf_dt, aes(x = model, y = R2, fill = model)) +  # ici x = model plutôt
   labs(
     x = "Modèle",
     y = expression(R^2),
-    title = "Performances des modèles avec le top 1000 SNP"
+    title = "Performances des modèles avec le top 1000 du score importance résiduals"
   ) +
   theme_minimal() +
   theme(

@@ -2,19 +2,16 @@ data:
   phenotype: "data/Phenotype.rda"
   genomic: "data/Genomic.rda"
   localisation: "data/localisation.rda"
-  residuals: "data/LM_Pheno_pop_Residuals.rds"
+  residuals: "data/pheno_null.rds"
 
 analysis:
   phenotypes:
-    - "HT2009"
-    - "CIRC2011"
     - "Rust"
-    - "CIRC2009"
-    - "BudFlushSlope"
-    - "RamifSyllep"
-    - "BrAnglVert"
-    - "Dia2015_sqrt"
-  use_residuals: false   # true = residuals, false = phénotypes bruts
+    - "pheno_pop_aware"
+    - "pheno_kin_aware"
+    - "pheno_null"
+
+  use_residuals: true   # true = residuals, false = phénotypes bruts
   n_iter: 870
   subset_size: 5000
   seed: 123
@@ -23,4 +20,4 @@ cv:
   outer_folds: 5
 
 output:
-  save_dir: "results/RF_multi"
+  save_dir: "results/RF_multi_pheno_null_res"

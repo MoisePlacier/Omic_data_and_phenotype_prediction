@@ -2,14 +2,16 @@ data:
   phenotype: "data/Phenotype.rda"
   genomic: "data/Genomic.rda"
   localisation: "data/localisation.rda"
-  residuals: "data/pheno_null.rds"
+  residuals: "data/LM_Pheno_pop_Residuals.rds"
 
 analysis:
   phenotypes:
+    - "Rust"
     - "pheno_pop_aware"
     - "pheno_kin_aware"
     - "pheno_null"
-  use_residuals: true
+
+  use_residuals: true   # true = residuals, false = phénotypes bruts
   n_iter: 870
   subset_size: 5000
   seed: 123
@@ -18,4 +20,4 @@ cv:
   outer_folds: 5
 
 output:
-  save_dir: "results/VIP_scores_multi"
+  save_dir: "results/RF_multi_pheno_null_res"

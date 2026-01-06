@@ -19,13 +19,16 @@ library(mixOmics)
 # import des datas
 
 ```{r}
-data(Phenotype)
+
+#data(Phenotype)
 data(Genomic)
 data("localisation")
+PHENO_FILE <- "data/pheno_null.rds"
 ```
 
 ```{r}
-pheno <- as.data.table(Phenotype)
+
+pheno <- as.data.table(readRDS(PHENO_FILE))
 loc_df<- as.data.table(localisation)
 geno<- as.data.table(Genomic)
 geno[, ID := rownames(Genomic)]
@@ -34,6 +37,8 @@ pheno[, ID := rownames(Phenotype)]
 merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
 
 ```
+
+
 
 # LM (Pheno \~ population )
 
@@ -89,7 +94,7 @@ Y_residuals
 ```
 
 ```{r}
-save_dir <- "Residuals" 
+save_dir <- "data/" 
 dir.create(save_dir, showWarnings = FALSE) 
 saveRDS(Y_residuals, file = file.path(save_dir, paste0("LM_Pheno_pop_Residuals.rds")))
 ```

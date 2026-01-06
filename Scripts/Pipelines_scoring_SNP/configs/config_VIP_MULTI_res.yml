@@ -2,7 +2,7 @@ data:
   phenotype: "data/Phenotype.rda"
   genomic: "data/Genomic.rda"
   localisation: "data/localisation.rda"
-  residuals: "data/pheno_null.rds"
+  residuals: "data/LM_Pheno_pop_Residuals.rds"
 
 analysis:
   phenotypes:

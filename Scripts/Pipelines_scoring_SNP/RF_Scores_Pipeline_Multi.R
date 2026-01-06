@@ -65,6 +65,7 @@ if (USE_RES) {
   pheno_all[, ID := rownames(Phenotype)]
 }
 
+
 ############################
 ## Fonction RF
 ############################
@@ -181,7 +182,7 @@ for (BASE_NAME in PHENOS) {
   ############################
   ## Parallélisation
   ############################
-  N_CORES <- min(2, detectCores() - 6)
+  N_CORES <- min(2, detectCores() - 2)
   cl <- makeCluster(N_CORES)
   registerDoParallel(cl)
 
