@@ -1,0 +1,37 @@
+data:
+  phenotype: "data/Phenotype.rda"
+  genomic: "data/Genomic.rda"
+  localisation: "data/localisation.rda"
+  kinship: "data/Kinship_Poplar.rda"
+
+analysis:
+  phenotypes:
+    - HT2009
+    - HT2011
+    - CIRC2011
+    - CIRC2009
+    - Rust
+    - BudFlushSlope
+    - RamifSyllep
+    - BrAnglVert
+    - Dia2015_sqrt
+
+  maf_threshold: 0.05
+  missing_threshold: 0.10
+  n_pcs: 4
+  use_population_structure: true
+  population_column: "Population"
+  k_r: true
+
+gwas:
+  methods: ["MLM", "FarmCPU"]
+  vc_method: "EMMA"
+  maxLine: 5000
+
+prediction:
+  top_snps: 100
+
+
+settings:
+  n_cores: 11
+  output_dir: "results"
