@@ -45,13 +45,13 @@ merged <- merge(merged, geno, by = "ID")
 ```{r}
 cols_to_read <- c(
   "SNP", "phenotype", "method", "context",
-  "n_obs", "mean", "median", "sd", "max")
+  "n_obs", "mean")
 
-all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores.parquet", as_data_table = TRUE, col_select = cols_to_read)
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged.parquet", as_data_table = TRUE, col_select = cols_to_read)
 
 # colonne 'median' comme score global pour le ranking
-all_scores_dt[, absmean := abs(mean)]
-all_scores_dt[, rank := frank(-absmean, ties.method = "min"), by = .(phenotype, method, context)]
+
+all_scores_dt[, rank := frank(-mean, ties.method = "average"), by = .(phenotype, method, context)]
 
 ```
 

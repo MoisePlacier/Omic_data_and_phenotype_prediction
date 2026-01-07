@@ -12,15 +12,19 @@ library(ggplot2)
 source("R/run_ridge.R")
 source("R/run_rf.R")
 source("R/run_models_from_scores.R")
+library(arrow)
 ```
 
-# data 
+# data
+
 ```{r}
-load("data/Phenotype.rda")
+Pheno_FILE <- "data/pheno_null.rds"
+pheno<- as.data.table(readRDS(Pheno_FILE))
+
 load("data/localisation.rda")
 load("data/Genomic.rda")
 
-pheno_dt <- as.data.table(Phenotype, keep.rownames = "ID")
+pheno_dt <- pheno[, ID := rownames(Genomic)]
 geno_dt  <- as.data.table(Genomic,   keep.rownames = "ID")
 loc_dt   <- as.data.table(localisation)
 
@@ -30,23 +34,38 @@ X_full <- as.matrix(
 rownames(X_full) <- geno_dt$ID
 
 cols_to_read <- c(
-  "SNP", "phenotype", "method", "context",
-  "n_obs", "mean", "median", "sd", "max")
+  "SNP", "phenotype", "method", "context","mean")
 
-all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores.parquet", as_data_table = TRUE, col_select = cols_to_read)
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged.parquet", as_data_table = TRUE, col_select = cols_to_read)
 
 # colonne 'mean' comme score global pour le ranking
-all_scores_dt[, absmean := abs(mean)]
-all_scores_dt[, rank := frank(-absmean, ties.method = "min"), by = .(phenotype, method, context)]
+all_scores_dt[, rank := frank(-mean, ties.method = "average"), by = .(phenotype, method, context)]
 
+```
+```{r}
+unique(all_scores_dt$context)
+unique(all_scores_dt$method)
 ```
 
 
 
 ```{r}
-phenos_run   <- c("BudFlushSlope","HT2009","Dia2015_sqrt","BrAnglVert","CIRC2011","RamifSyllep")
-methods_run  <- c("RF","VIP")                        # méthodes à évaluer
-contexts_run <- c( "residuals","phenotype")    # contextes
+dim(X_full)
+```
+
+
+```{r}
+phenos_run   <- c("BudFlushSlope",
+                  "HT2009",
+                  "Dia2015_sqrt",
+                  "BrAnglVert",
+                  "CIRC2011",
+                  "CIRC2009",
+                  "RamifSyllep",
+                  "Rust",
+                  "pheno_kin_aware","pheno_null","pheno_pop_aware" )
+methods_run  <- c("RF","VIP","FarmCPU","MLM")            # méthodes à évaluer
+contexts_run <- c( "residuals","phenotype","GWAS")    # contextes
 ```
 
 ```{r message=TRUE}
@@ -55,7 +74,7 @@ ridge_perf <- run_model_from_scores(
   phenotypes = phenos_run,
   methods = methods_run,
   contexts = contexts_run,
-  topK = 1000 ,
+  topK = 100,
   X_full = X_full,
   y_full = pheno_dt,
   model_name = "ridge",
@@ -67,8 +86,7 @@ ridge_perf <- run_model_from_scores(
 
 ```
 
-
-# Perf avec la médiane pour la ridge regression 
+# Perf avec la médiane pour la ridge regression
 
 ```{r}
 library(data.table)
@@ -81,7 +99,6 @@ med_dt <- ridge_perf[
   by = .(method_context, context, phenotype, model)
 ]
 ```
-
 
 ```{r}
 ggplot(ridge_perf, aes(x = method_context, y = R2, fill = context)) +
@@ -119,16 +136,24 @@ rf_grid <- data.table(
   mtry = c(3, 9 , 25),
   min.node.size = c(1, 10)
 )
-phenos_run   <- c("BudFlushSlope","HT2009","Dia2015_sqrt","BrAnglVert","CIRC2011","RamifSyllep")
-methods_run  <- c("RF","VIP")                        # méthodes à évaluer
-contexts_run <- c( "residuals","phenotype")    # contextes
+phenos_run   <- c("BudFlushSlope",
+                  "HT2009",
+                  "Dia2015_sqrt",
+                  "BrAnglVert",
+                  "CIRC2011",
+                  "CIRC2009",
+                  "RamifSyllep",
+                  "Rust",
+                  "pheno_kin_aware","pheno_null","pheno_pop_aware" )
+methods_run  <- c("RF","VIP","FarmCPU","MLM")            # méthodes à évaluer
+contexts_run <- c( "residuals","phenotype","GWAS")
 
 rf_perf <- run_model_from_scores(
   all_scores_dt = all_scores_dt,
   phenotypes = phenos_run,
   methods = methods_run,
   contexts = contexts_run,
-  topK = 1000,
+  topK = 100,
   X_full = X_full,
   y_full = pheno_dt,
   model_name = "rf",
@@ -141,7 +166,6 @@ rf_perf <- run_model_from_scores(
 )
 
 ```
-
 
 ```{r}
 rf_perf[, method_context := paste(method, context, sep = "_")]
@@ -180,6 +204,7 @@ ggplot(rf_perf, aes(x = method_context, y = R2, fill = context)) +
   scale_fill_brewer(palette = "Set2")
 
 ```
+
 ```{r}
 library(ggplot2)
 library(data.table)
@@ -189,13 +214,11 @@ library(data.table)
 ridge_perf
 ```
 
-
 ```{r}
 rf_perf
 ```
 
-
-# Comparaison Ridge et RF 
+# Comparaison Ridge et RF
 
 ```{r}
 # Filtrage sur RF_residuals
@@ -242,4 +265,3 @@ ggplot(perf_dt, aes(x = model, y = R2, fill = model)) +  # ici x = model plutôt
   scale_fill_brewer(palette = "Set2")
 
 ```
-

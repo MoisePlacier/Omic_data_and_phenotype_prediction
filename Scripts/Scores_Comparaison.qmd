@@ -21,23 +21,20 @@ library(glmnet)
 library(corrplot)
 ```
 
-
 ## leccture des scores
 
 ```{r}
 library(arrow)
 cols_to_read <- c(
-  "SNP", "phenotype", "method", "context",
-  "n_obs", "mean", "median", "sd", "q90", "q95", "max"
-)
-all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores.parquet",
+  "SNP", "phenotype", "method", "context", "mean")
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged.parquet",
                               as_data_table = TRUE,
                               col_select = cols_to_read)
 
 # Classement basé sur la moyenne
 
 # colonne 'mean' comme score global pour le ranking
-all_scores_dt[, rank := frank(mean, ties.method = "average"), by = .(phenotype, method, context)]
+all_scores_dt[, rank := frank(-mean, ties.method = "average"), by = .(phenotype, method, context)]
 
 
 # 1. Z-score
@@ -45,14 +42,13 @@ all_scores_dt[, score_z := (mean - mean(mean, na.rm = TRUE)) / sd(mean, na.rm = 
               by = .(phenotype, method, context)]
 
 # 2. Min-max scaling sur le z-score pour avoir 0-1
-all_scores_dt[, score_scaled_01 := (score_z - min(score_z, na.rm = TRUE)) /
+all_scores_dt[, score_scaled := (score_z - min(score_z, na.rm = TRUE)) /
                                   (max(score_z, na.rm = TRUE) - min(score_z, na.rm = TRUE)),
               by = .(phenotype, method)]
 
 all_scores_dt[, method_context := paste(method, context, sep = "_")]
 all_scores_dt[, method_context := factor(method_context, levels = unique(method_context))]
 ```
-
 
 ```{r}
 tmp <- tstrsplit(all_scores_dt$SNP, "_")
@@ -62,12 +58,9 @@ all_scores_dt[, pos   := as.numeric(tmp[[2]])]
 all_scores_dt[, chrom_num := as.numeric(sub("^Chr", "", chrom))]
 ```
 
-
-
 ```{r}
 head(all_scores_dt)
 ```
-
 
 ```{r}
 #plot(density(all_scores_dt[method == "VIP"]$rank, kernel = "gaussian", adjust = 1))
@@ -87,7 +80,7 @@ for(ph in phenotypes){
   
   tmp_dt <- all_scores_dt[phenotype == ph]
   
-  p <- ggplot(tmp_dt, aes(x = score_scaled_01, y = method_context, fill = method_context)) +
+  p <- ggplot(tmp_dt, aes(x = score_scaled, y = method_context, fill = method_context)) +
     geom_density_ridges(alpha = 0.6, scale = 1.2, rel_min_height = 0.01) +
     scale_fill_cyclical(values = c("#1b9e77","#d95f02","#7570b3","#e7298a"), guide = "none") +
     theme_ridges(font_size = 12, grid = TRUE) +
@@ -105,8 +98,6 @@ for(ph in phenotypes){
 
 
 ```
-
-
 
 ## Manahattan plot !
 
@@ -165,8 +156,7 @@ manhattan(
 )
 ```
 
-
-# YEAHHHHHH
+# TOP K comparaison 
 
 ```{r}
 get_scores_for_pheno <- function(dt, pheno, method, context1, context2) {
@@ -178,10 +168,6 @@ get_scores_for_pheno <- function(dt, pheno, method, context1, context2) {
   return(merged)
 }
 ```
-
-
-
-
 
 ```{r}
 library(data.table)
@@ -239,23 +225,26 @@ compare_all_phenos_full_safe <- function(dt, phenos, method_sel, context_sel, to
 }
 ```
 
+
+## Execution 
+
 ```{r}
 
 ####################################
 ############ RF ####################
 ####################################
 
-phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep")
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep","Rust","pheno_pop_aware","pheno_kin_aware","pheno_null")
 method_run <- "RF"
 context_run <- "phenotype"
-topK_run <- 1000
+topK_run <- 100
 
 RF_res_pheno <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run, context_run, topK_run)
 
-phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep")
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep","Rust","pheno_pop_aware","pheno_kin_aware","pheno_null")
 method_run <- "RF"
 context_run <- "residuals"
-topK_run <- 1000
+topK_run <- 100
 
 RF_res_res <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run, context_run, topK_run)
 
@@ -265,38 +254,63 @@ RF_res_res <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run
 ####################################
 
 
-phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep")
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep","Rust","pheno_pop_aware","pheno_kin_aware","pheno_null")
 method_run <- "VIP"
 context_run <- "phenotype"
-topK_run <- 1000
+topK_run <- 100
 
 VIP_res_pheno <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run, context_run, topK_run)
 
-phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep")
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep","Rust","pheno_pop_aware","pheno_kin_aware","pheno_null")
 method_run <- "VIP"
 context_run <- "residuals"
-topK_run <- 1000
+topK_run <- 100
 
 VIP_res_res <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run, context_run, topK_run)
 
 
+####################################
+############ FarmCPU ###############
+####################################
+
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep","Rust")
+method_run <- "FarmCPU"
+context_run <- "GWAS"
+topK_run <- 100
+
+farmcpu_run <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run, context_run, topK_run)
+
+####################################
+############ MLM.    ###############
+####################################
+
+phenos_run <- c("CIRC2009","CIRC2011","HT2009","BudFlushSlope","BrAnglVert","Dia2015_sqrt","RamifSyllep","Rust")
+method_run <- "MLM"
+context_run <- "GWAS"
+topK_run <- 100
+
+mlm_run <- compare_all_phenos_full_safe(all_scores_dt, phenos_run, method_run, context_run, topK_run)
+
+
 
 ```
-```{r}
-VIP_res_res
-```
+
 
 
 ```{r}
-# Ajouter une colonne pour indiquer le contexte
+
 RF_res_pheno[, context := "RF_phenotype"]
 RF_res_res[, context := "RF_residuals"]
 
 VIP_res_pheno[, context := "VIP_phenotype"]
 VIP_res_res[, context := "VIP_residuals"]
 
+farmcpu_run[, context := "FarmCPU"]
+
+mlm_run[, context := "MLM"]
+
 # Fusionner les deux résultats pour comparer
-res_all <- rbind(RF_res_pheno, RF_res_res,VIP_res_pheno,VIP_res_res)
+res_all <- rbind(RF_res_pheno, RF_res_res,VIP_res_pheno,VIP_res_res,farmcpu_run,mlm_run)
 ```
 
 ```{r}
@@ -316,7 +330,7 @@ ggplot(res_all, aes(x = pheno1, y = pheno2, fill = spearman)) +
 ggplot(res_all, aes(x = pheno1, y = pheno2, fill = topK_overlap)) +
   geom_tile() +
   facet_wrap(~ context) +
-  scale_fill_gradient(low = "white", high = "red") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
   theme_minimal() +
   labs(
     title = paste0("Proportion TOP ", topK_run, " SNPs communs entre phénotypes"),
@@ -325,26 +339,70 @@ ggplot(res_all, aes(x = pheno1, y = pheno2, fill = topK_overlap)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
+# Focus sur 1 chromosome 
+
 ```{r}
-#method_context == "RF_residuals"
-#,"Chr02", "Chr03","Chr04","Chr05","Chr01","Chr06"
-ggplot(all_scores_dt[method_context %in% c("RF_residuals","RF_phenotype","VIP_phenotype","VIP_residuals") &
-                     chrom %in% c("Chr13") &
-                     phenotype %in% c("CIRC2009","CIRC2011","HT2009","BrAnglVert")],
-       aes(x = pos, y = score_scaled_01, color = phenotype, alpha = score_scaled_01)) +
+all_scores_dt[method_context %in% c("RF_residuals","RF_phenotype","VIP_residuals","FarmCPU_GWAS","MLM_GWAS") &
+                  chrom %in% c("Chr10") & score_scaled >= 0.1,
+                  phenotype %in% c("BrAnglVert","RamifSyllep")]
+```
+
+```{r}
+dt_plot <- all_scores_dt[
+  method_context %in% c("RF_residuals","RF_phenotype","VIP_phenotype","FarmCPU_GWAS","MLM_GWAS") &
+  chrom %in% c("Chr13") &
+  rank <200 &
+  phenotype %in% c("HT2009","CIRC2011","CIRC2009")
+]
+
+ggplot(dt_plot, aes(x = pos, y = score_scaled, color = phenotype, alpha = score_scaled)) +
   geom_point(size = 1) +
   facet_grid(method_context ~ chrom, scales = "free_x") +
+  coord_cartesian(ylim = c(0,1)) +  # force y entre 0 et 1 sans couper les données
   theme_minimal() +
-  labs(title = "Scores moyens des SNP du chromosome 13 par phénotype et méthode de scoring",
-       x = "Position SNP",
-       y = "Score normalisé",
-       alpha = "Score") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  labs(
+    title = "Scores moyens des SNP du chromosome 10 par phénotype et méthode de scoring",
+    x = "Position SNP",
+    y = "Score normalisé",
+    alpha = "Score"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text.y = element_text(angle = 0)
+  )
 
 ```
 ```{r}
-head(all_scores_dt)
+dim(dt_plot)
 ```
+
+```{r}
+library(ggplot2)
+library(plotly)
+
+p <- ggplot(
+  dt_plot,
+  aes(
+    x = pos,
+    y = score_scaled,
+    color = phenotype,
+    text = paste0("SNP: ", SNP, "<br>",
+                  "Score: ", round(score_scaled,3), "<br>",
+                  "Rank: ", rank))  # info affichée au survol
+  ) +
+  geom_point(size = 2, alpha = 0.7) +
+  facet_grid(method_context ~ chrom, scales = "free_x") +
+  scale_y_continuous(breaks = c(0,1)) +
+  theme_minimal() +
+  theme(
+    axis.text.x. = element_text(angle = 45, hjust = 1),
+    strip.text.y = element_text(angle = 0)
+  )
+
+ggplotly(p, tooltip = "text")  # rend le graphique interactif
+
+```
+
 
 ```{r}
 library(FactoMineR)
@@ -379,6 +437,7 @@ fviz_pca_ind(res.pca,
              legend.title = "Chromosome")
 
 ```
+
 ```{r}
 snp_mat <- dcast(all_scores_dt[method_context == "VIP_residuals"], SNP ~ phenotype, value.var = "score_scaled", fill = 0)
 rownames(snp_mat) <- snp_mat$SNP
@@ -405,8 +464,6 @@ all_scores_dt[, is_topK := SNP %in% top_snps]
 
 ```
 
-
-
 ```{r}
 top_snps_vec <- rownames(snp_mat) %in% top_snps
 
@@ -420,7 +477,6 @@ fviz_pca_ind(res.pca,
              palette = c("red", "grey"),
              legend.title = "Top SNP")
 ```
-
 
 ```{r}
 compare_scores <- function(scores_dt, topK = 10000) {
@@ -495,17 +551,18 @@ plots_list$HT2009_RF
 plots_list$BudFlushSlope_RF
 ```
 
+# ACP scores
 
-# ACP scores 
-AFM par phénotype avec les 4 modalités de méthodes et les chromosomes en position => 1 tableau = modalité x méthode 
+AFM par phénotype avec les 4 modalités de méthodes et les chromosomes en position =\> 1 tableau = modalité x méthode
+
 ```{r}
 library(FactoMineR)
 
 ```
+
 ```{r}
 head(all_scores_dt)
 ```
-
 
 ```{r}
 sum(is.numeric(as.numeric(all_scores_dt[phenotype == "HT2009" & method == "RF" ,c(6)])))
@@ -514,11 +571,3 @@ sum(is.numeric(as.numeric(all_scores_dt[phenotype == "HT2009" & method == "RF" ,
 ```{r}
 PCA(all_scores_dt[phenotype == "HT2009" & method == "RF" ,c(6,4,17)],ncp = 2, quanti.sup =c(2,3) )
 ```
-
-
-
-
-
-
-
-

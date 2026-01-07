@@ -14,69 +14,9 @@ library(FactoMineR)
 library(qqman)
 library(mixOmics)
 library(yaml)
+library(arrow)
 
 ```
-
-# import des datas
-
-```{r}
-data(Phenotype)
-data(Genomic)
-data("localisation")
-```
-
-```{r}
-pheno <- as.data.table(Phenotype)
-loc_df<- as.data.table(localisation)
-geno<- as.data.table(Genomic)
-geno[, ID := rownames(Genomic)]
-pheno[, ID := rownames(Phenotype)]
-
-merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
-
-```
-
-# LM (Pheno \~ population )
-
-```{r}
-df <- as.data.table(merged)
-```
-
-```{r}
-phenos <- names(df)[sapply(df, is.numeric)]
-phenos <- setdiff(phenos, c("class_index","Lat","Lgn","ID"))
-```
-
-```{r}
-phenos
-```
-
-```{r}
-get_r2 <- function(var) {
-  form<- as.formula(paste(var, "~ Population"))
-  mod<- lm(form, data = df)
-  summary(mod)$r.squared
-}
-
-r2_values<- data.table(
-  phenotype = phenos,
-  r2= sapply(phenos, get_r2))
-```
-
-```{r}
-
-ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
-  geom_point(size = 3) +
-  geom_segment(aes(x = phenotype, xend = phenotype, y = 0, yend = r2)) +
-  coord_flip() +
-  ylab("R² lm(Phénotype ~ Population)") +
-  xlab("Caractère phénotypique") +
-  theme_minimal()
-```
-
-khi 2 snp \~ pop
-
-table cont snp chr13 et pop =\> haplo pour différentier la pop
 
 # Data visualisation
 
@@ -86,31 +26,196 @@ constructions des axes : chromosomes =\> on sépare les individus selon leur dis
 
 on pourra voir quels chromosomes ne sont pas dutout corrélés avec des traits phénotypiques
 
-# Réccupération des positions :
+
+
 
 ```{r}
-merged<- merge(merged, geno, by = "ID")
-geno_mat <- as.matrix(geno)
-coords <- do.call(rbind, strsplit(colnames(geno), "_"))
-chrom <- as.factor(coords[,1])
-pos <- as.numeric(coords[,2])
+Genomic_FILE <- "data/Genomic.rda"
+load(Genomic_FILE)
+geno <- as.data.table(Genomic)
+
+Loc_FILE <- "data/localisation.rda"
+load(Loc_FILE)
+loc_df<- as.data.table(localisation)
+
+Pheno_FILE <- "data/pheno_null.rds"
+
+pheno<- as.data.table(readRDS(Pheno_FILE))
+geno[, ID := rownames(Genomic)]
+pheno[, ID := rownames(Genomic)]
+
 ```
 
-## PCA
+
+
+## ACP pheno
+```{r}
+pheno <- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
+pheno[,2:25]
+```
 
 ```{r}
-pca <- PCA(merged[,2:217022], quali.sup=21 ,quanti.sup=(2:20) )
+pca.pheno <- PCA(pheno[,2:25], quali.sup=24 )
 ```
 
 ```{r}
-plot(pca,choix="ind",habillage=21)
+plotellipses(pca.pheno,24)
+```
+
+## ACP kinship 
+```{r}
+Kinship_FILE <- "data/Kinship_Poplar.rda"
+load(Kinship_FILE)
+K <- as.data.table(Kinship_Poplar)
+
+K <- K[, ID := rownames(Genomic)]
+
+K <- merge(K, loc_df[,list(Population,ID)], by = "ID")
+
+```
+
+
+```{r}
+pca.K <- PCA(K[,2:201], quali.sup=200 )
+```
+```{r}
+plotellipses(pca.K,200)
+```
+
+## MFA Kinship x Phenotype 
+
+```{r}
+K_pheno <- merge(K, pheno, by = "ID")
+```
+
+
+```{r}
+mfa <- MFA(K_pheno[,2:224], group = c(199,1,23), type = c("s","n","s"), num.group.sup=2,name.group=c("kinship","Population","pheno") )
+```
+```{r}
+plot(mfa,choix="ind",habillage = "Population.x")
+barplot(mfa$eig[1:10,1],main="Eigenvalues")
+```
+
+# ACP Geno 
+
+```{r}
+geno <- merge(geno, loc_df[,list(Population,ID)], by = "ID")
 ```
 
 ```{r}
-plot(pca,choix="var", #invisible = c("quali","var"),
-     label = c("quanti.sup"),
-     select = "coord 10" )
+pca.geno <- PCA(geno[,2:217002], quali.sup = 217001 )
 ```
+
+```{r}
+plot(pca.geno,choix="ind",habillage = "Population")
+```
+## geno transposed
+
+```{r}
+t_geno <- transpose(geno[, 2:217001])
+t_geno[, SNP := names(geno)[2:217001]]
+setcolorder(t_geno, "SNP")
+```
+
+```{r}
+dim(t_geno)
+```
+
+
+```{r}
+pca.tgeno <- PCA(t_geno[,2:200])
+```
+
+
+
+Et bim ! Chromosome 13 !! 
+
+## Focus TOP K SNP 
+
+```{r}
+cols_to_read <- c(
+  "SNP", "phenotype", "method", "context",
+   "mean","median"
+)
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged.parquet",
+                              as_data_table = TRUE,
+                              col_select = cols_to_read)
+
+# Classement basé sur la moyenne
+
+# colonne 'mean' comme score global pour le ranking
+all_scores_dt[, rank := frank(-mean, ties.method = "average"), by = .(phenotype, method, context)]
+
+
+# 1. Z-score
+all_scores_dt[, score_z := (mean - mean(mean, na.rm = TRUE)) / sd(mean, na.rm = TRUE),
+              by = .(phenotype, method, context)]
+
+# 2. Min-max scaling sur le z-score pour avoir 0-1
+all_scores_dt[, score_scaled := (score_z - min(score_z, na.rm = TRUE)) /
+                                  (max(score_z, na.rm = TRUE) - min(score_z, na.rm = TRUE)),
+              by = .(phenotype, method)]
+```
+```{r}
+pheno1 <- "HT2009"
+#pheno1 <- "pheno_null"
+method1 <- "MLM"
+context1 <- "GWAS"
+
+dt1 <- all_scores_dt[phenotype == pheno1 & method == method1 & context == context1,
+            .(SNP,mean = mean, score = score_scaled, rank = rank)]
+```
+
+```{r}
+dt1
+```
+
+
+
+```{r}
+snps_sel <- dt1[order(rank)][1:min(100, .N), SNP]
+
+
+
+coords_dt <- as.data.table(pca.tgeno$ind$coord[, 1:2])
+
+setnames(coords_dt, c("PC1", "PC2"))
+
+coords_dt[, SNP := names(geno)[2:217001]]
+
+coords_dt[, highlight := ifelse(SNP %in% snps_sel, "selected", "other")]
+
+ggplot(coords_dt, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = highlight),
+             alpha = 0.6,
+             size = 1) +
+  geom_point(
+    data = coords_dt[highlight == "selected"],
+    color = "red",
+    size = 2
+  ) +
+  geom_text(
+    data = coords_dt[highlight == "selected"],
+    aes(label = SNP),
+    vjust = -0.8,
+    size = 3,
+    color = "red"
+  ) +
+  scale_color_manual(
+    values = c("other" = "grey70", "selected" = "red"),
+    guide = "none"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "ACP sur les SNP (matrice Individus × SNP)",
+    x = "PC1",
+    y = "PC2"
+  )
+
+```
+
+
 
 ## MixOmic
 

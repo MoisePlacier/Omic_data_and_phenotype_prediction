@@ -4,6 +4,10 @@ data
 .rds
 *.rds
 *.rda
+*data
+*.Rdata
+*history
+
 
 results_random_VIP_PLS/
 

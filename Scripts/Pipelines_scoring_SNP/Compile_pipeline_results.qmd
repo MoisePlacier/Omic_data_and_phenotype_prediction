@@ -52,6 +52,25 @@ DIRS <- list(
 ```
 
 ```{r}
+
+DIRS <- list(
+    RF = list(
+    root    = "results/VIP_scores_multi_null",
+    method  = "VIP",
+    context = "phenotype",
+    score_col = "VIP"
+  ),
+    RF_resid = list(
+    root    = "results/VIP_scores_multi_res_phenonull",
+    method  = "VIP",
+    context = "residuals",
+    score_col = "VIP"
+  )
+)
+
+```
+
+```{r}
 read_score_dir <- function(root, method, context, score_col) {
   print(c("traitement de >>>",root))
   pheno_dirs <- list.dirs(root, recursive = FALSE, full.names = TRUE)
@@ -102,7 +121,6 @@ read_score_dir <- function(root, method, context, score_col) {
 }
 ```
 
-
 ```{r}
 all_scores <- rbindlist(
   lapply(DIRS, function(x) {
@@ -115,13 +133,14 @@ all_scores <- rbindlist(
   }),
   fill = TRUE
 )
+```
 
-
+```{r}
 setcolorder(
   all_scores,
   c(
     "SNP", "phenotype", "method", "context",
-    "n_obs", "mean", "median", "sd", "q90", "q95", "max",
+    "n_obs", "mean", "median", "sd", "q95", "max",
     "scores_raw"
   )
 )
@@ -129,62 +148,56 @@ setcolorder(
 tmp_file <- tempfile(fileext = ".parquet")
 write_parquet(all_scores, tmp_file)
 
-final_file <- "results/all_scores.parquet"
+final_file <- "results/all_scores_pheno_null_VIP.parquet"
 file.rename(tmp_file, final_file)
 
 ```
 
 ```{r}
-pheno_sel <- "CIRC2011"
-context_sel   <- "phenotype"
+pheno_sel <- "Rust"
+context_sel   <- "residuals"
 method_sel    <- "RF"
 
 dt <- all_scores[
   method   == method_sel &
   phenotype == pheno_sel &
-  context  == context_sel &
-  SNP      == "Chr11_4052885",
+  context  == context_sel,
   .(SNP, mean, method, context)
 ]
 ```
 
-```{r}
-dt
-```
-
-### Save en parquet
-
-```{r}
-# Lecture des fichiers en liste
-files <- c("results/SNP_scores_RF.rds","results/SNP_scores_RF_res.rds","results/SNP_scores_VIP_res.rds")
-res <- lapply(files, readRDS)
-
-# Concaténation par lignes
-all_dt <- rbindlist(res, fill = TRUE)
-
-```
+### Merge en parquet
 
 ```{r}
 library(arrow)
 ```
 
 ```{r}
+dt1 <- read_parquet("results/gwas_all_results.parquet", as_data_table = TRUE)
+```
+
+```{r}
+
+unique(dt1$phenotype)
+```
+```{r}
+dt_all
+```
+
+
+```{r}
+dt2 <- read_parquet("results/all_scores_pheno_null_VIP.parquet", as_data_table = TRUE)
+```
+
+```{r}
+dt_all <- rbind(dt_all, dt1, use.names = TRUE, fill = TRUE)
+
+
 tmp_file <- tempfile(fileext = ".parquet")
-write_parquet(all_scores, tmp_file)
+write_parquet(dt_all, tmp_file)
 
 # Puis on déplace le fichier temporaire vers le chemin final
-final_file <- "results/all_scores.parquet"
+final_file <- "results/all_scores_merged.parquet"
 file.rename(tmp_file, final_file)
 
-```
-
-```{r}
-# Lecture ultérieure
-cols_to_read <- c(    "SNP", "phenotype", "method", "context",
-    "n_obs", "mean", "median", "sd", "q90", "q95", "max")
-all_dt_loaded <- read_parquet(final_file, as_data_table = TRUE, col_select = cols_to_read)
-```
-
-```{r}
-all_dt_loaded
 ```

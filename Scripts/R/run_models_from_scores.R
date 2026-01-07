@@ -5,7 +5,6 @@ library(parallel)
 library(doParallel)
 library(glmnet)
 
-
 run_model_from_scores <- function(
     all_scores_dt,
     phenotypes,
@@ -21,7 +20,6 @@ run_model_from_scores <- function(
     K_inner = 5,
     seed = 123
 ) {
-
   library(data.table)
   set.seed(seed)
 
@@ -57,12 +55,14 @@ run_model_from_scores <- function(
     for (m in methods) {
       for (ctx in contexts) {
 
-        snp_sel <- all_scores_dt[
-          phenotype == ph &
-            method == m &
-            context == ctx
-        ][order(rank)][1:topK, SNP]
+        dt_sub <- all_scores_dt[phenotype == ph & method == m & context == ctx]
 
+        # Skip si aucune donnée pour cette combinaison
+        if (nrow(dt_sub) < 2) next
+
+        snp_sel <- dt_sub[order(rank)][1:min(topK, .N), SNP]
+
+        # Skip si moins de 2 SNP sélectionnés
         if (length(snp_sel) < 2) next
 
         X_sub <- X_full[, colnames(X_full) %in% snp_sel, drop = FALSE]
@@ -92,3 +92,4 @@ run_model_from_scores <- function(
 
   return(rbindlist(res_all, fill = TRUE))
 }
+
