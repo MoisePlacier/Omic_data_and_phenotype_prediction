@@ -1,15 +1,24 @@
 data:
-  phenotype: "data/Phenotype.rda"
-  genomic: "data/Genomic.rda"
-  localisation: "data/localisation.rda"
-  residuals: "data/pheno_null.rds"
+  phenotype: "../data/Phenotype.rda"
+  genomic: "../data/Genomic.rda"
+  localisation: "../data/localisation.rda"
+  residuals: "../data/LMM_Residuals_Kinship_Pop.rds"
 
 analysis:
   phenotypes:
+    - "CIRC2009"
+    - "CIRC2011"
+    - "HT2009"
+    - "HT2011"
+    - "BudFlushSlope",
+    - "BrAnglVert"
+    - "Dia2015_sqrt"
+    - "RamifSyllep",
     - "Rust"
     - "pheno_pop_aware"
     - "pheno_kin_aware"
     - "pheno_null"
+
 
   use_residuals: true   # true = residuals, false = phénotypes bruts
   n_iter: 870
@@ -20,4 +29,4 @@ cv:
   outer_folds: 5
 
 output:
-  save_dir: "results/RF_multi_pheno_null_res"
+  save_dir: "results/RF_all_pheno_all_snp"

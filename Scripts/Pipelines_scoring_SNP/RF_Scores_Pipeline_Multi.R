@@ -80,14 +80,14 @@ run_RF_analysis <- function(task, X, y, save_dir, base_name) {
   y_train <- y[train_idx]
   y_test  <- y[test_idx]
 
-  mtry_val <- min(500, ncol(X_train))
+  #mtry_val <- min(500, ncol(X_train))
 
   rf_fit <- ranger(
     x = X_train,
     y = y_train,
-    num.trees = 500,
-    mtry = mtry_val,
-    min.node.size = 5,
+    num.trees =  2000,
+    mtry = max(floor(ncol(X_train)/50), 500) ,
+    min.node.size = 1,
     importance = "impurity_corrected",
     oob.error = FALSE,
     num.threads = 5,
@@ -182,7 +182,7 @@ for (BASE_NAME in PHENOS) {
   ############################
   ## Parallélisation
   ############################
-  N_CORES <- min(2, detectCores() - 2)
+  N_CORES <- max(2, detectCores() - 2)
   cl <- makeCluster(N_CORES)
   registerDoParallel(cl)
 

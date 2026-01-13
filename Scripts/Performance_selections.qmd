@@ -42,17 +42,15 @@ all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged.p
 all_scores_dt[, rank := frank(-mean, ties.method = "average"), by = .(phenotype, method, context)]
 
 ```
+
 ```{r}
 unique(all_scores_dt$context)
 unique(all_scores_dt$method)
 ```
 
-
-
 ```{r}
 dim(X_full)
 ```
-
 
 ```{r}
 phenos_run   <- c("BudFlushSlope",

@@ -43,8 +43,24 @@ Pheno_FILE <- "data/pheno_null.rds"
 pheno<- as.data.table(readRDS(Pheno_FILE))
 geno[, ID := rownames(Genomic)]
 pheno[, ID := rownames(Genomic)]
+```
+
+
+```{r}
+Epi_FILE <- "data/Epigenetic_CG.rda"
+
+load(Epi_FILE)
+```
+
+
+```{r}
+epi<- as.data.table(Epigenetic_CG)
+epi[, ID := rownames(Genomic)]
 
 ```
+
+
+
 
 
 
@@ -67,13 +83,19 @@ plotellipses(pca.pheno,24)
 Kinship_FILE <- "data/Kinship_Poplar.rda"
 load(Kinship_FILE)
 K <- as.data.table(Kinship_Poplar)
+```
 
+
+```{r}
 K <- K[, ID := rownames(Genomic)]
 
 K <- merge(K, loc_df[,list(Population,ID)], by = "ID")
 
 ```
 
+```{r}
+K
+```
 
 ```{r}
 pca.K <- PCA(K[,2:201], quali.sup=200 )
@@ -158,7 +180,7 @@ all_scores_dt[, score_scaled := (score_z - min(score_z, na.rm = TRUE)) /
               by = .(phenotype, method)]
 ```
 ```{r}
-pheno1 <- "HT2009"
+pheno1 <- "CIRC2009"
 #pheno1 <- "pheno_null"
 method1 <- "MLM"
 context1 <- "GWAS"

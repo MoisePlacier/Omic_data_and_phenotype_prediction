@@ -47,6 +47,8 @@ On décompose la matrice de kinship (SVD). On génère un signal aléatoire sur 
 
 Le phénotype pour un individu est donc la somme, sur tous les axes génétiques, de (position génétique de l’individu sur l’axe) × (effet aléatoire de cet axe), plus un bruit individuel.
 
+
+
 ```{r}
 Kinship_FILE <- "../data/Kinship_Poplar.rda"
 load(Kinship_FILE)
@@ -64,13 +66,20 @@ set.seed(2010)
 
 z <- rnorm(length(lambda), sd=1)  # coefficient aléatoire par composante
 g <- U %*% (sqrt(lambda) * z) # Pour chaque individu : somme des loadings individuels multipliés par un effet aléatoire par composante, pondéré par la racine de l’inertie de la composante
+```
+la covariance de $g$ est exactement $K$.
+$$ \mathbf{g} \sim \mathcal{N}(\mathbf{0}, \mathbf{K}) $$
 
+```{r}
 ### Ajout d'un bruit sur les individus
 
 var_g <- var(as.numeric(g))
 var_g
 h2_target <- 0.5   # Le bruit représente 50 % de variance populationnelle cf R^2 des modèles lm(phenos ~ pop)
+```
+$$ h^2 = \frac{\sigma_g^2}{\sigma_g^2 + \sigma_e^2} \qquad <=> \qquad\sigma_e^2 = \sigma_g^2 \frac{1 - h^2}{h^2} $$
 
+```{r}
 sigma_e2 <- var_g * (1 - h2_target) / h2_target
 sigma_e  <- sqrt(sigma_e2)
 sigma_e
@@ -82,7 +91,11 @@ e <- rnorm(nrow(K), sd = sigma_e)
 
 pheno_null_pop <- as.numeric(g + e)
 pheno_all[, pheno_kin_aware := pheno_null_pop]
+```
 
+$$ \mathbf{y} = \mathbf{g} + \epsilon  \qquad et\qquad \mathbf{y} \sim \mathcal{N}\bigl(\mathbf{0}, \sigma_g^2 \mathbf{K} + \sigma_e^2 \mathbf{I}\bigr) $$
+
+```{r}
 hist(pheno_all$pheno_kin_aware)
 ```
 # Population-aware negative control
@@ -115,6 +128,104 @@ pheno_all[, pheno_pop_aware := pop_effects[merged$Population] + rnorm(.N, sd = s
 hist(pheno_all$pheno_pop_aware)
 ```
 
+# Pheno déflatés de Kinship et genomic
+
+Pour obtenir des résidus phénotypiques totalement déflatés de la structure génétique, nous avons opté pour une approche hybride : l'utilisation de variables de population et des premières composantes principales (PCs) en effets fixes pour capturer la structure de population globale, complétée par l'inclusion de la matrice de parenté (Kinship) en effet aléatoire pour modéliser l'apparentement plus fin. Cette double correction assure que les résidus fournis à la Random Forest sont exempts de tout signal de structure familiale ou géographique.
+
+
+```{r}
+Genomic_FILE <- "../data/Genomic.rda"
+load(Genomic_FILE)
+geno <- as.data.table(Genomic)
+
+
+Kinship_FILE <- "../data/Kinship_Poplar.rda"
+load(Kinship_FILE)
+K <- as.data.table(Kinship_Poplar)
+
+Loc_FILE <- "../data/localisation.rda"
+load(Loc_FILE)
+loc_df<- as.data.table(localisation)
+
+
+Pheno_FILE <- "../data/Phenotype.rda"
+load(Pheno_FILE)
+pheno_all <- as.data.table(Phenotype) 
+pheno_all[, ID := rownames(Genomic)]
+```
+
+
+
+## SVD matrice Kinship
+
+```{r}
+eig <- eigen(K, symmetric = TRUE)
+U <- eig$vectors           
+lambda <- eig$values       
+```
+
+
+
+```{r}
+library(sommer)
+
+# On prépare les données : merge phénotypes, localisation (Population) et PCs
+
+pcs_dt <- as.data.table(U[, 1:5])
+colnames(pcs_dt) <- paste0("PC", 1:5)
+pcs_dt[, ID := pheno_all$ID]
+```
+
+
+
+```{r}
+df_mixed <- merge(pheno_all, loc_df[, .(ID, Population)], by = "ID")
+df_mixed <- merge(df_mixed, pcs_dt, by = "ID")
+
+# Liste des phénotypes à traiter 
+phenos_to_process <- c(
+  "CIRC2009","CIRC2011","HT2009","BudFlushSlope",
+  "BrAnglVert","Dia2015_sqrt","RamifSyllep",
+  "Rust","pheno_pop_aware","pheno_kin_aware","pheno_null","HT2011"
+)
+
+# Fonction pour extraire les résidus du modèle mixte (LMM)
+get_mixed_residuals <- function(var, data, K_mat) {
+  message("Processing: ", var)
+  
+  # Formule : on retire l'effet fixe de la Pop et des 3 premières PC
+  # On ajoute l'effet aléatoire de la Kinship (K)
+  mod <- mmer(fixed = as.formula(paste(var, "~ Population + PC1 + PC2 + PC3")),
+              random = ~ vsr(ID, Gu = K_mat),
+              rcov = ~ units,
+              data = data,
+              verbose = FALSE)
+  
+  # residuals(mod) renvoie les résidus e = y - (Xb + Zu)
+  return(as.numeric(residuals(mod)))
+}
+
+# Application à tous les phénotypes
+K_matrix <- as.matrix(K) # sommer a besoin d'une matrice standard
+rownames(K_matrix) <- colnames(K_matrix) <- df_mixed$ID
+
+Y_mixed_residuals <- as.data.frame(
+  sapply(phenos_to_process, get_mixed_residuals, data = df_mixed, K_mat = K_matrix)
+)
+
+Y_mixed_residuals$ID <- df_mixed$ID
+
+# Sauvegarde
+saveRDS(Y_mixed_residuals, "../data/LMM_Residuals_Kinship_Pop.rds")
+```
+```{r}
+Y_mixed_residuals
+```
+```{r}
+Y_mixed_residuals_merged <- merge(Y_mixed_residuals, loc_df[, .(ID, Population)], by = "ID")
+```
+
+
 ## Save
 
 
@@ -133,18 +244,39 @@ saveRDS(pheno_all, file = "../data/pheno_null.rds")
 Genomic_FILE <- "../data/Genomic.rda"
 load(Genomic_FILE)
 geno <- as.data.table(Genomic)
+```
 
+
+```{r}
 Loc_FILE <- "../data/localisation.rda"
 load(Loc_FILE)
 loc_df<- as.data.table(localisation)
 
-pheno <- as.data.table(pheno_all)
+Pheno_FILE <- "../data/pheno_null.rds"
+
+pheno<- as.data.table(readRDS(Pheno_FILE))
+
+
 
 geno[, ID := rownames(Genomic)]
-pheno[, ID := rownames(Phenotype)]
+pheno[, ID := rownames(Genomic)]
+```
 
-merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
 
+```{r}
+merged<- merge(Y_mixed_residuals_merged, loc_df[,list(Population,ID)], by = "ID")
+
+```
+
+```{r}
+merged$Population <- merged$Population.x
+```
+
+
+```{r}
+ggplot(merged, aes(x=Population, y = pheno_pop_aware)) +
+         geom_boxplot()
+merged
 ```
 
 

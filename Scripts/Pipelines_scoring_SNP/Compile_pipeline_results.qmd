@@ -19,6 +19,45 @@ library(stringr)
 library(future)
 library(future.apply)
 ```
+```{r}
+imp <-readRDS("results/RF_scores_res/RF_CIRC2009/RF_scores_all_CIRC2009.rds")
+```
+
+```{r}
+imp
+```
+```{r}
+which.is.max(imp$importance)
+```
+```{r}
+imp[21067236,]
+```
+```{r}
+imp[importance > 0.45]
+```
+
+
+```{r}
+
+filtered <- imp[SNP == "Chr16_11351593" & phenotype == "CIRC2009", .(importance, iter)]
+
+
+cols <- rainbow(length(unique(filtered$iter)))
+cols_iter <- cols[as.numeric(factor(filtered$iter))]
+
+# Plot
+plot(filtered$importance, col = cols_iter, pch = 16,
+     xlab = "Index", ylab = "Importance", main = "Importance par itération")
+legend("topright", legend = unique(filtered$iter), col = cols, pch = 16, title = "Iteration")
+
+```
+
+
+
+```{r}
+readRDS("results/RF_all_pheno_all_snp/RF_HT2009/RF_perf_all_HT2009.rds")
+```
+
 
 ```{r}
 
@@ -55,16 +94,10 @@ DIRS <- list(
 
 DIRS <- list(
     RF = list(
-    root    = "results/VIP_scores_multi_null",
-    method  = "VIP",
-    context = "phenotype",
-    score_col = "VIP"
-  ),
-    RF_resid = list(
-    root    = "results/VIP_scores_multi_res_phenonull",
-    method  = "VIP",
-    context = "residuals",
-    score_col = "VIP"
+    root    = "results/RF_all_pheno_all_snp",
+    method  = "RF",
+    context = "phenotype_all_SNP",
+    score_col = "importance"
   )
 )
 
@@ -148,10 +181,17 @@ setcolorder(
 tmp_file <- tempfile(fileext = ".parquet")
 write_parquet(all_scores, tmp_file)
 
-final_file <- "results/all_scores_pheno_null_VIP.parquet"
+final_file <- "results/RF_scores_all_pheno_all_snp.parquet"
 file.rename(tmp_file, final_file)
 
 ```
+```{r}
+which.is.max(all_scores$sd)
+```
+```{r}
+all_scores[1123929]
+```
+
 
 ```{r}
 pheno_sel <- "Rust"
@@ -173,24 +213,29 @@ library(arrow)
 ```
 
 ```{r}
-dt1 <- read_parquet("results/gwas_all_results.parquet", as_data_table = TRUE)
+dt1 <- read_parquet("results/gwas_results_pheno_null.parquet", as_data_table = TRUE)
 ```
+```{r}
+dt1[,p_value := NULL]
+dt1
+```
+
 
 ```{r}
 
 unique(dt1$phenotype)
 ```
+
 ```{r}
 dt_all
 ```
 
-
 ```{r}
-dt2 <- read_parquet("results/all_scores_pheno_null_VIP.parquet", as_data_table = TRUE)
+dt2 <- read_parquet("results/all_scores_merged.parquet", as_data_table = TRUE)
 ```
 
 ```{r}
-dt_all <- rbind(dt_all, dt1, use.names = TRUE, fill = TRUE)
+dt_all <- rbind(dt2, dt1, use.names = TRUE, fill = TRUE)
 
 
 tmp_file <- tempfile(fileext = ".parquet")
