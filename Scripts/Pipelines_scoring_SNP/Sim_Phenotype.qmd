@@ -1,0 +1,190 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+## Packages
+
+```{r message=FALSE}
+library(data.table)
+library(ggplot2)
+library(arrow)
+```
+
+## Data
+
+```{r}
+load("data/Genomic.rda")
+load("data/Kinship_Poplar.rda")
+load("data/Phenotype.rda")
+load("data/localisation.rda")
+```
+
+### Simuler un Phenotype
+
+#### Preparation des data
+
+```{r}
+
+# Mettre ID en rownames pour être sûr
+rownames(localisation) <- localisation$ID
+
+# Réordonner comme Genomic
+Phenotype <- Phenotype[rownames(Genomic), ]
+localisation <- localisation[rownames(Genomic), ]
+
+# Vérification
+# stopifnot(all(rownames(Phenotype) == localisation$ID))
+
+identical(rownames(localisation), rownames(Phenotype))
+```
+
+#### Phénotype purement lié à la population
+
+```{r}
+set.seed(123)
+
+# Effet moyen par population
+pop_effects <- rnorm(length(unique(localisation$Population)), 0, 2)
+names(pop_effects) <- unique(localisation$Population)
+
+# Nouveau phénotype structuré
+Phenotype$HT_struct_pop <-
+  pop_effects[localisation$Population] +
+  rnorm(nrow(Phenotype), 0, 0.5)
+
+```
+
+#### Phénotype lié à la géographie (localisation)
+
+```{r}
+set.seed(123)
+Phenotype$HT_struct_geo <-
+  0.5 * scale(localisation$Lat) +
+  0.3 * scale(localisation$Lgn) +
+  0.2 * scale(localisation$Elev) +
+  rnorm(nrow(Phenotype), 0, 0.5)
+
+
+```
+
+#### Phenotype mixte: lié à la population et à la localisation
+
+```{r}
+set.seed(123)
+Phenotype$HT_struct_mix <-
+  pop_effects[localisation$Population] +
+  0.4 * scale(localisation$Lat) +
+  0.2 * scale(localisation$Elev) +
+  rnorm(nrow(Phenotype), 0, 0.5)
+
+```
+
+## Lien SNP
+
+#### Preparation des data
+
+```{r }
+Phenotype$Population <- localisation$Population
+
+# Phenotype$Population <- as.factor(Phenotype$Population)
+
+identical(rownames(Genomic), rownames(Phenotype))
+Phenotype$Chr13_15574007 <- Genomic[, "Chr13_15574007"] # Chr13_15635566
+
+str(Phenotype$CIRC2009)
+table(Phenotype$Population)
+summary(Phenotype$Chr13_15574007)
+
+```
+
+#### Effet de la population sur le phénotype
+
+```{r}
+
+boxplot(
+  CIRC2009 ~ Population,
+  data = Phenotype,
+  col = "lightblue",
+  las = 2,
+  main = "Distribution de CIRC2009 par population",
+  ylab = "CIRC2009"
+)
+```
+
+```{r}
+options(contrasts = c("contr.sum", "contr.poly"))
+mod_pop <- lm(CIRC2009 ~ Population + Chr13_15574007 + Population:Chr13_15574007, data = Phenotype)
+anova(mod_pop)
+# car::Anova(mod_pop, type="III")
+summary(mod_pop)
+# Population a un effet très fort
+# Une fois Population prise en compte, le SNP n’apporte pas d’information supplémentaire
+# L'interaction n'est pas significative
+```
+#### Genotype sur phenotype 
+
+```{r}
+boxplot(
+  CIRC2009 ~ as.factor(Chr13_15574007),
+  data = Phenotype,
+  col = "lightblue",
+  xlab = "Génotype SNP Chr13_15574007",
+  ylab = "CIRC2009",
+  main = "CIRC2009 en fonction du SNP Chr13_15574007"
+)
+
+```
+
+## Lien SNP - population (structure génétique)
+
+```{r}
+# Table des effectifs génotypiques par population
+table_geno <- table(Phenotype$Population, Phenotype$Chr13_15574007)
+table_geno
+# Fréquences génotypiques par population
+prop.table(table_geno, margin = 1)
+
+# Les fréquences alléliques par pop 
+chisq.test(table_geno) # Les fréquences alléliques diffèrent fortement entre populations
+# L’effet du SNP n’est pas indépendant de la structure de population
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+freq_allele <- Phenotype %>%
+  group_by(Population) %>%
+  summarise(
+    n = sum(!is.na(Chr13_15574007)),
+    freq_alt = mean(Chr13_15574007, na.rm = TRUE) / 2
+  )
+
+freq_allele
+
+ggplot(freq_allele, aes(x = Population, y = freq_alt)) +
+  geom_col(fill = "steelblue") +
+  geom_text(
+    aes(label = paste0("n = ", n)),
+    hjust = -0.1,
+    size = 3
+  ) +
+  coord_flip() +
+  labs(
+    y = "Fréquence de l’allèle alternatif",
+    title = "Structure allélique de Chr13_15574007 par population"
+  ) +
+  ylim(0, 1)
+
+```
+
+
+```{r}
+mod_snp_pop <- lm(Chr13_15574007 ~ Population, data = Phenotype)
+anova(mod_snp_pop)
+
+```
+
