@@ -153,15 +153,15 @@ chisq.test(table_geno) # Les fréquences alléliques diffèrent fortement entre 
 ```
 
 ```{r}
-library(ggplot2)
-library(dplyr)
+setDT(Phenotype)
 
-freq_allele <- Phenotype %>%
-  group_by(Population) %>%
-  summarise(
+freq_allele <- Phenotype[
+  , .(
     n = sum(!is.na(Chr13_15574007)),
     freq_alt = mean(Chr13_15574007, na.rm = TRUE) / 2
-  )
+  ),
+  by = Population
+]
 
 freq_allele
 
@@ -182,9 +182,4 @@ ggplot(freq_allele, aes(x = Population, y = freq_alt)) +
 ```
 
 
-```{r}
-mod_snp_pop <- lm(Chr13_15574007 ~ Population, data = Phenotype)
-anova(mod_snp_pop)
-
-```
 
