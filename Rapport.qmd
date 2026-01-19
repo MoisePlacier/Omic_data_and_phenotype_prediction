@@ -1,10 +1,11 @@
 ---
-title: "Rapport"
+title: "Comparaison d'approches linéaires et non-linéaires pour le scoring de SNPs et la prédiction de caractères complexes chez Populus nigra."
+author: "Placier Moïse & Fabrice Traore"
+date: "19 janvier 2026"
 format:
   pdf:
     toc: True
     toc-depth: 3
-    toc-location: none
     lof: False
     lof-location: none
     number-sections: true
@@ -38,39 +39,99 @@ header-includes:
   - \addbibresource{bibliographie_peuplier.bib}
 ---
 
-# Introduction et Contexte Scientifique
+# Introduction
 
-Notre travail a été réalisé avec l'unité [BioForA](https://biofora.val-de-loire.hub.inrae.fr/) (Biologie intégrée pour la valorisation de la diversité des arbres et de la forêt) du centre INRAE Val de Loire. Il prend place dans la continuité directe des travaux de thèse menés par Alexandre Duplan, sous l'encadrement de Harold Duruflé et Leopoldo Sanchez-Rodriguez. Le projet vise à comprendre les mécanismes d'adaptation des arbres forestiers, spécifiquement le peuplier noir (Populus nigra), face aux changements environnementaux.
+Notre travail a été réalisé en partenariat avec l'unité [BioForA](https://biofora.val-de-loire.hub.inrae.fr/) (Biologie intégrée pour la valorisation de la diversité des arbres et de la forêt) du centre INRAE Val de Loire. Il prend place dans la continuité directe des travaux de thèse menés par Alexandre Duplan, sous l'encadrement de Harold Duruflé et Leopoldo Sanchez-Rodriguez. Le projet vise à comprendre les mécanismes d'adaptation des arbres forestiers, spécifiquement le peuplier noir (Populus nigra), face aux changements environnementaux.
 
 Pour ce faire, nous exploitons des données multi-omiques (génomique, épigénomique, transcriptomique) issues des projets [ANR SYBIOPOP](https://anr.fr/Projet-ANR-13-JSV6-0001) et [EPITREE](https://epitree-project.hub.inrae.fr/). L'objectif de notre travail est de construire des modèles capables de prédire des traits phénotypiques complexes (croissance, phénologie, résistance aux maladies) à partir des données génomiques.
 
 ## L'héritage méthodologique
 
-Les travaux antérieurs au sein de l'unité ont permis de constituer et de traiter une base de données conséquente regroupant 199 individus de peupliers noirs génotypés et phénotypés. Alexandre Duplan à développé, entre autres, plusieurs approches de modélisations pour prédire les phénotypes à partir des données multi-omiques. Il base son approche sur une concaténation des différentes couches omiques à partir de laquel il applique différents modèles de prédictions comme la régression Ridge ou le random Forest. Le choix d'intégration précoces des différentes couches omiques par concaténation est motivé par le fait que cela permet d'avoir une vue unifiée du système système biologique. Cependant, la concaténation 
+Les travaux conduits précédemment au sein de l’unité ont permis la constitution et la curation d'un jeu de données de référence regroupant 199 individus de peupliers noirs (Populus nigra). Sur cette base, les recherches d'Alexandre Duplan ont exploré diverses stratégies de modélisation pour la prédiction de caractères complexes à partir de données multi-omiques. Sa méthodologie repose sur une intégration précoce (early integration) consistant en la concaténation des différentes couches omiques, traitées ensuite par des algorithmes de régression Ridge ou de Random Forest. Ce choix technique permet d'appréhender le système biologique de manière unifiée, en traitant l'ensemble des l'information sur le même plan.
 
-Dans une optique de réduction de dimension et d'identification des régions génomiques clés, une stratégie de pré-filtrage a été initialement adoptée. Elle reposait sur l'utilisation de modèles mixtes multi-locus (MLMM), une approche classique de type GWAS (Genome-Wide Association Study). L'hypothèse sous-jacente était que la sélection des marqueurs présentant les associations statistiques les plus fortes avec le phénotype permettrait de maximiser la précision prédictive tout en réduisant le bruit.
+Néanmoins, cette approche augmente considérablement la dimensionnalité du jeu de données, soulevant plusieurs défis méthodologiques. Premièrement, l'hétérogénéité du nombre de variables entre les couches omiques induit un déséquilibre structurel : les couches les plus denses (nottament les 3 contextes épigénétiques) surreprésentent l'information, biaisant ainsi la contribution relative de chaque niveau omique au sein du modèle. Deuxièmement, l'augmentation du nombre de variables complexifie l’interprétation des résultats. La présence de variables non informatives, sans lien biologique avec le caractère étudié, dilue le signal causal. Cela rend difficile l'identification précise des locus d’intérêt ainsi que la quantification de la part de variance expliquée par ces derniers.
 
-## Le paradoxe de la sélection : GWAS vs Sélection Aléatoire
+Pour pallier ces limites, Alexandre Duplan a développé un filtre de sélection de variables visant à ne conserver que les marqueurs les plus informatifs de chaque couche. Dans cette optique de réduction de dimension, il a mis en œuvre un modèle mixte multi-locus (MLMM), qui est une approche de GWAS (Genome-Wide Association Study), afin d'évaluer l'association statistique de chaque SNP avec les phénotypes. En sélectionnant les marqueurs présentant les p-values les plus significatives (inférieures à un seuil défini), il a pu isoler un ensemble de 31 754 SNPs associés de manière significative aux différents caractères, réduisant ainsi la dimensionalité du jeu de donné génomique avant l'étape d'intégration.
 
-Les analyses comparatives menées ont révélé un résultat contre-intuitif majeur : la performance prédictive ($R^2$) obtenue à partir d'un sous-ensemble de marqueurs sélectionnés aléatoirement s'avère équivalente à celle obtenue via une sélection ciblée par MLMM/GWAS. Ce phénomène suggère que l'approche GWAS classique, en se focalisant exclusivement sur les signaux additifs les plus robustes, échoue à capturer la complexité du paysage génétique nécessaire à une prédiction précise. Ce constat nous impose de repenser la sélection de variables non plus comme un simple filtrage statistique, mais comme une recherche de signaux complémentaires.
+Cette stratégie de filtrage à eu un effet variable sur les performances de prédictions des différents phénotypes : tantôt positif, tantôt négatif. Alexandre Duplan suggère que ce filtre à pu éliminer du bruit, mais également des variables explicatives réelles, ce qui s'est traduit parfois par une dégradation des performances du modèle. Les analyses comparatives ont également révélé un résultat contre-intuitif; la performance prédictive obtenue à partir d'un sous-ensemble de marqueurs génomique de même taille mais sélectionnés aléatoirement s'avère équivalente à celle obtenue via une sélection ciblée par MLMM/GWAS.
 
-## Objectifs Scientifiques
 
-À la demande de Harold Duruflé, ce projet explore des alternatives non linéaires pour pallier les limites des approches linéaire dans la prédiction de phénotypes complexes. Nous avons pris le parti méthodologique d'intégrer cette non-linéarité dès l'étape de sélection des variables (scoring), plutôt que de l'utiliser uniquement comme outil de prédiction final. Cette stratégie répond à une double ambition :
+## Objectifs de l'étude et hypothèses de travail
 
-### Identification de l'architecture épistatique et gain en explicabilité
+Les hypothèses que nous posons dans le cadre de ce travail cherchent a répondre simultanément à plusieurs objectifs : 
 
-Le premier objectif est d'identifier des interactions complexes (gène x gène) qui constituent une part importante de l'héritabilité manquante. En utilisant des algorithmes capables de capter des dépendances non linéaires, nous cherchons à découvrir des effets épistatiques à l'échelle des SNPs afin de faciliter l'interprétation biologique.[@papier1]
+1- Comprendre pourquoi la selection d'un subset aléatoire de taille identique au subset identifié par le MLMM permet d'obtenir des performances de prédictions similaires. 
 
-### Raffinement de la sélection pour une meilleur prédiction
+2- Améliorer les performances de prédictions.
 
-Le second objectif vise à aboutir à une sélection de marqueurs plus fine et plus robuste. En confrontant les signaux issus de méthodes linéaires (GWAS) et d'approches non linéaires de scoring des SNP (interactions), nous espérons d'un part : filtrer le bruit de fond et ne conserver que les variants porteurs d'une information unique ou synergique. D'autre part : maximiser la variance expliquée en combinant des sources de signaux complémentaires pour construire un modèle de prédiction plus performant que ceux basées sur une sélection aléatoire ou strictement GWAS de SNP.
+3- Améliorer l'explicabilité des modèles de prédictions.
 
-# Enjeux et Architecture de l'Approche en "Deux Bras"
+4- Réduire la dimensionnalité de l'espace des prédicteurs génétiques pour permettre une concaténation de données (data integration) efficace avec d'autres couches omiques (transcriptomique, métabolomique), sans saturer les modèles par le nombre de variables. 
 
-La prédiction de phénotypes complexes se heurte à deux obstacles majeurs : la structure de population hautement hiérarchisée chez le peuplier noir (*Populus nigra*) et l'existence à priori d'interactions non linéaires (épistasie). Pour répondre à ces défis, nous avons développé une approche de **"Double Tamisage"** combinant des modèles linéaires mixtes et la flexibilité du machine learning.
+À la demande de Harold Duruflé, ce projet explore spécifiquement des alternatives non linéaires pour pallier les limites des approches linéaire dans la prédiction de phénotypes complexes. Nous avons pris le parti méthodologique d'intégrer cette non-linéarité dès l'étape de sélection des variables (scoring) via un Random Forest. Cette stratégie repose sur des hypothèses que nous chercherons a tester : 
 
-### Le Bras Linéaire
+### Complémentarité des signaux : Épistasie vs Additivité
+
+Nous postulons que l'utilisation de la Random Forest (RF) permet d'identifier des interactions complexes (gène x gène) qui échappent aux modèles linéaires de type MLMM. Là où le MLMM capture la contribution additive infinitésimale, le RF détecterait des dépendances non linéaires et des effets épistatiques. Nous supposons donc que ces deux méthodes ne voient pas le même signal génétique et que les deux méthodes ne sont pas redondantes mais complémentaires. 
+
+### Parsimonie et Spécificité du signal
+
+Nous émettons l'hypothèse que le scoring par RF aboutit à une sélection de SNPs plus restreinte mais plus dense en information. En isolant les combinaisons de variants les plus prédictives, la RF permettrait de s'affranchir des signaux redondants liés au Déséquilibre de Liaison (LD) et à la structure de population. Le scoring par RF aboutirait à une sélection de SNPs qui seraient plus spécifique des processus biologiques du caractère étudié et situés sur des locus fonctionnels.
+
+Si cette hypothèse se confirme, l'intérêt majeur réside dans un gain direct en explicabilité. En réduisant le nombre de SNPs candidats à une liste de locus hautement spécifiques au caractère étudié, nous facilitons l'interprétation biologique grâce à l'identification de gènes candidats ou des voies métaboliques spécifiques. 
+
+
+### Gain prédictif par hybridation 
+
+Enfin, nous chercherons à montrer que la combinaison de ces sources de signaux complémentaires permet de maximiser la variance expliquée. En confrontant les scores issus du GWAS (linéaire) et de la RF (interactions), nous espérons filtrer le bruit de fond pour ne conserver que les variants porteurs d'une information soit unique, soit synergique. L'objectif est de démontrer qu'un modèle hybride surpasse les modèles "mono-méthode" en termes de pouvoir prédictif ($R^2$).
+
+Afin de confronter ces hypothèses à la réalité biologique, ce projet s'appuie sur l'étude d'une population de peupliers noirs (Populus nigra). Le peuplier est caractérisé par un génome très structuré par population et constitu donc un terrain d'étude idéal pour tester la robustesse du scoring par Random Forest face aux approches linéaires classiques.
+
+Le chapitre suivant détaille les ressources génomiques utilisées ainsi que le pipeline bio-informatique — allant de la déflation des phénotypes par modèles mixtes à la construction de modèles de prédiction hybrides — mis en œuvre pour valider notre approche.
+
+# Caractérisation des ressources génomiques et phénotypiques
+
+La prédiction de phénotypes complexes se heurte à un obstacle majeur : la structure de population est hautement hiérarchisée chez le peuplier noir (*Populus nigra*) 
+
+## Etude de la structure des populations de Populus nigra
+SNPs et structure de la population : qlq ACP etc etc 
+
+
+## Génération de phénotypes de contrôle (traits nuls)
+
+
+# Correction de la structure de population et de l'apparentement
+
+Justification du modèle $Q+K$ (Yu & Price) pour obtenir des résidus propres : 
+
+## Implémentation du modèle mixte (Q+K)
+Pour isoler le signal épistatique du signal polygénique de fond, nous utilisons un modèle linéaire mixte (LMM) pour déflater le phénotype.
+
+Distinction entre Kinship et PCs
+Dans notre modèle, nous utilisons deux niveaux de correction :
+- **La Kinship (effet aléatoire) :** Elle modélise la variance liée à l'apparentement "fin" (cousins, frères). Elle traite les individus comme issus d'une distribution continue.
+- **Les Composantes Principales de la Kinship et la Population (PCs - effets fixes) :** Elles agissent comme des "interrupteurs" puissants retirant les différences massives entre grandes populations géographiques. 
+
+L'utilisation conjointe des PCs (ici les 3 premières) et de la Kinship garantit que :
+1. Le "gros" de la structure (histoire évolutive et géographie) est évacué mathématiquement.
+2. La Kinship affine la correction pour la proximité familiale.
+
+Le MLM classique "lisse" la génétique pour éviter les faux positifs en ajustant les $p-values$ selon la ressemblance familiale. Cependant, il suppose que les effets s'additionnent simplement ($1+1=2$) et reste "aveugle" à l'épistasie (où l'effet du SNP A dépend du SNP B).
+
+En fournissant les résidus au Random Forest, on lui transmet la part du phénotype que la parenté n'a pas pu expliquer. Si un individu est beaucoup plus performant que ce que sa "famille" laisse prévoir, la RF cherchera les combinaisons uniques de SNPs (chemins décisionnels) expliquant ce gain.
+
+ Le "Double Tamisage"
+Cette méthode résout le problème de la colinéarité. Une RF sur phénotype brut "redécouvrirait" simplement la parenté. Sur résidus, chaque point d'importance apporte une **information à priori nouvelle**.
+- **Tamis 1 (LMM) :** Enlève la structure globale.
+- **Tamis 2 (RF) :** Cherche les pépites (interactions) dans ce qui reste.
+
+## Extraction et validation des résidus phénotypiques
+
+
+
+# Analyse comparative des méthodes de scoring des SNPs
+
+## Estimation des effets additifs via le modèle MLMM
 
 L'objectif est d'identifier les effets additifs principaux, considérés comme les "piliers" de l'architecture génétique du caractère.
 
@@ -80,7 +141,7 @@ L'objectif est d'identifier les effets additifs principaux, considérés comme l
 
 **Sélection**: Extraction du Top K SNPs basée sur la significativité statistique ($p\text{-value}$). Ce "tamisage" privilégie les marqueurs présentant un signal robuste et stable sur l'ensemble de la population étudiée.
 
-### Le Bras Non-Linéaire (Ranger/RF sur résidus)
+## Capture des effets non linéaires par Random Forest (Ranger)
 
 Ce bras vise à capturer les effets fins, les interactions gène x gène (épistasie) et les effets à seuil que le modèle linéaire échoue à détecter.
 
@@ -88,7 +149,7 @@ Ce bras vise à capturer les effets fins, les interactions gène x gène (épist
 - **Principe :** En travaillant sur les **résidus** du modèle nul, on force l'algorithme à faire abstraction de la structure de population et de l'apparentement moyen pour se concentrer sur les "exceptions à la règle" (déviations phénotypiques inexpliquées par la génétique additive).
 - **Stratégie de "Feature Subspacing" :** Pour pallier le problème de la haute dimension ($p = 210\,000$ pour $n = 199$), nous avons mis en place un protocole d'échantillonnage itératif : 870 tirages avec remise de sous-ensembles de 5 000 SNPs.
 
-### Avantages méthodologiques du sous-échantillonnage de SNPs :
+#### Avantages méthodologiques du sous-échantillonnage de SNPs :
 
 1. **Stabilisation du score d'importance :** Chaque SNP est sélectionné en moyenne 20 fois dans des contextes génomiques (voisinages de tirage) différents. Le score final d'importance est une moyenne pondérée de ces itérations, ce qui permet de lisser le "biais de contexte" et de stabiliser l'importance statistique de chaque marqueur : 
    $$E[Imp] = \frac{1}{N} \sum_{i=1}^{N} Imp_{i}$$
@@ -113,40 +174,15 @@ où $N$ est le nombre de tirages incluant le SNP. Cette convergence statistique 
 
 - **Sélection :** Extraction du Top K SNPs par score d'importance moyen.
 
-# Déflation Phénotypique et Gestion de la Structure
+## Comportement des modèles de scoring face au signal aléatoire
 
-Pour isoler le signal épistatique du signal polygénique de fond, nous utilisons un modèle linéaire mixte (LMM) pour déflater le phénotype.
-
-### Distinction entre Kinship et PCs
-Dans notre modèle, nous utilisons deux niveaux de correction :
-- **La Kinship (effet aléatoire) :** Elle modélise la variance liée à l'apparentement "fin" (cousins, frères). Elle traite les individus comme issus d'une distribution continue.
-- **Les Composantes Principales (PCs - effets fixes) :** Elles agissent comme des "interrupteurs" puissants retirant les différences massives entre grandes populations géographiques. 
-
-### Justification de la correction hybride
-L'utilisation conjointe des PCs (ici les 3 premières) et de la Kinship garantit que :
-1. Le "gros" de la structure (histoire évolutive et géographie) est évacué mathématiquement.
-2. La Kinship affine la correction pour la proximité familiale.
-
-# Pourquoi l'approche sur résidus est-elle "le meilleur des deux mondes" ?
-
-Le MLM classique "lisse" la génétique pour éviter les faux positifs en ajustant les $p-values$ selon la ressemblance familiale. Cependant, il suppose que les effets s'additionnent simplement ($1+1=2$) et reste "aveugle" à l'épistasie (où l'effet du SNP A dépend du SNP B).
-
-### Chercher les exceptions à la règle
-
-En fournissant les résidus au Random Forest, on lui transmet la part du phénotype que la parenté n'a pas pu expliquer. Si un individu est beaucoup plus performant que ce que sa "famille" laisse prévoir, la RF cherchera les combinaisons uniques de SNPs (chemins décisionnels) expliquant ce gain.
-
-###  Le "Double Tamisage"
-Cette méthode résout le problème de la colinéarité. Une RF sur phénotype brut "redécouvrirait" simplement la parenté. Sur résidus, chaque point d'importance apporte une **information à priori nouvelle**.
-- **Tamis 1 (LMM) :** Enlève la structure globale.
-- **Tamis 2 (RF) :** Cherche les pépites (interactions) dans ce qui reste.
-
-# Quantification de la Divergence du Signal : Une Preuve par le Transport Optimal
+## Évaluation de la divergence des sélections
 
 La mise en place de deux approches méthodologiques distinctes (**GWAS** vs **Random Forest sur résidus**) soulève une question fondamentale : ces méthodes capturent-elles la même information biologique via des marqueurs différents (redondance due au déséquilibre de liaison) ou explorent-elles des architectures génétiques réellement distinctes ?
 
 Pour répondre à cette interrogation, nous avons déployé une stratégie de comparaison métrique.
 
-## Divergence des listes de candidats (ARI)
+### Mesure de l'indice de Rand ajusté (ARI)
 
 Dans un premier temps, nous avons évalué le chevauchement des "Top SNPs" sélectionnés par chaque méthode via l'**Adjusted Rand Index (ARI)**. 
 
@@ -154,7 +190,7 @@ Bien que classiquement utilisé pour le clustering, l'ARI permet ici de mesurer 
 
 Cependant, en génétique des populations structurées, la distance physique ou l'identité stricte des marqueurs ne suffit pas. Deux SNPs différents peuvent porter la même information s'ils sont en fort **Déséquilibre de Liaison (LD)**.
 
-## L'Earth Mover's Distance (EMD) dans l'espace du LD
+### Analyse de la distribution des scores par Earth Mover’s Distance (EMD)
 
 Pour s'affranchir des biais de position et mesurer la véritable distance biologique entre les signaux, nous avons appliqué l'algorithme de l'**Earth Mover's Distance (EMD)**, ou distance de Wasserstein.
 
@@ -165,7 +201,7 @@ $$Coût(i, j) = 1 - r^2_{ij}$$
 Nous avons normalisé les scores d'importance (RF) et les $-\log_{10}(p\text{-values})$ (GWAS) pour qu'ils forment des distributions de probabilité (somme égale à 1). L'EMD mesure alors l'effort minimal pour transformer la "carte d'importance" du GWAS en celle de la Random Forest.
 
 
-### Résultats et Interprétation
+#### Résultats et Interprétation
 
 Les calculs d'EMD-LD révèlent une hiérarchie claire dans la divergence des signaux :
 
@@ -176,7 +212,6 @@ Les calculs d'EMD-LD révèlent une hiérarchie claire dans la divergence des si
 
 Cela démontre que la Random Forest ne se contente pas de sélectionner des "tags" alternatifs pour les mêmes QTLs, mais identifie des régions génomiques indépendantes des découvertes du GWAS.
 
-## Mise en évidence de la "Matière Noire" Génomique
 
 Cette divergence métrique s'incarne biologiquement dans l'identification de variants **"exclusifs"**. En croisant les scores d'importance avec les matrices de LD, nous avons isolé des SNPs présentant une importance prédictive majeure (Score > 2000) tout en étant totalement décorrélés des pics GWAS ($r^2_{max} < 0.1$). 
 
@@ -189,16 +224,23 @@ Nous reconnaissons que la $p\text{-value}$ (inférence de l'effet moyen additif)
 
 Cependant, l'utilisation de l'EMD sur des distributions normalisées permet de s'affranchir des échelles de mesure pour se concentrer sur la **topographie de l'information**. La divergence observée ($0.64$) valide l'hypothèse selon laquelle la supériorité prédictive de la Random Forest provient de l'exploitation de cette "matière noire" — des interactions complexes et des effets non-linéaires que le modèle linéaire, par construction, ne peut percevoir.
 
-# Modèle Final : Intégration par Régression Ridge
+# Évaluation des performances de prédiction génomique
+
+## Validation de la baseline de prédiction
+
+## Comparaison des capacités prédictives ($R^2$)
 
 L'étape finale consiste à fusionner les découvertes des deux bras dans un modèle unique :
 
 $$Y \sim Ridge(SNP_{GWAS} + SNP_{RF})$$
-
-### 1. Feature Engineering Intelligent
 Nous réalisons une intégration dirigée :
 - Nous forçons le modèle à considérer les SNPs linéairement importants (GWAS).
 - Nous injectons les SNPs porteurs d'information complexe (RF).
 
-### 2. Arbitrage par la Ridge
+
 La Ridge Regression réalise l'arbitrage final grâce à sa pénalité $L_2$. Contrairement à un XGBoost qui pourrait accorder une importance démesurée à une interaction par pur hasard statistique (bruit) sur un faible effectif ($n=199$), la Ridge stabilise les coefficients. Si une interaction trouvée par la RF n'est pas robuste, son coefficient sera réduit vers zéro, assurant ainsi la généralisation du modèle.
+
+# Discussions et perspectives 
+
+
+
