@@ -36,7 +36,7 @@ rownames(X_full) <- geno_dt$ID
 cols_to_read <- c(
   "SNP", "phenotype", "method", "context","mean")
 
-all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged.parquet", as_data_table = TRUE, col_select = cols_to_read)
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged_2.parquet", as_data_table = TRUE, col_select = cols_to_read)
 
 # colonne 'mean' comme score global pour le ranking
 all_scores_dt[, rank := frank(-mean, ties.method = "average"), by = .(phenotype, method, context)]
@@ -48,9 +48,7 @@ unique(all_scores_dt$context)
 unique(all_scores_dt$method)
 ```
 
-```{r}
-dim(X_full)
-```
+
 
 ```{r}
 phenos_run   <- c("BudFlushSlope",
@@ -63,8 +61,10 @@ phenos_run   <- c("BudFlushSlope",
                   "Rust",
                   "pheno_kin_aware","pheno_null","pheno_pop_aware" )
 methods_run  <- c("RF","VIP","FarmCPU","MLM")            # méthodes à évaluer
-contexts_run <- c( "residuals","phenotype","GWAS")    # contextes
+contexts_run <- c( "residuals","phenotype","GWAS","LMM_residuals")    # contextes
 ```
+
+# Ridge 
 
 ```{r message=TRUE}
 ridge_perf <- run_model_from_scores(
@@ -72,7 +72,7 @@ ridge_perf <- run_model_from_scores(
   phenotypes = phenos_run,
   methods = methods_run,
   contexts = contexts_run,
-  topK = 100,
+  topK = 500,
   X_full = X_full,
   y_full = pheno_dt,
   model_name = "ridge",
@@ -84,11 +84,57 @@ ridge_perf <- run_model_from_scores(
 
 ```
 
-# Perf avec la médiane pour la ridge regression
+```{r}
+ridge_perf
+```
+
 
 ```{r}
-library(data.table)
-library(ggplot2)
+
+ridge_perf[, method_context := paste(method, context, sep = "_")]
+
+# 2. Calcul des médianes (On reste sur le RMSE comme dans ton aes)
+med_dt <- ridge_perf[
+  ,
+  .(RMSE_median = median(RMSE, na.rm = TRUE)), # Nom plus explicite
+  by = .(method_context, context, phenotype, model)
+]
+
+# 3. Plot corrigé
+ggplot(ridge_perf, aes(x = method_context, y = RMSE, fill = context)) +
+  geom_boxplot() +
+  geom_text(
+    data = med_dt,
+    aes(
+      x = method_context,
+      y = RMSE_median,
+      label = sprintf("%.2f", RMSE_median),
+      group = context # CRUCIAL pour l'alignement avec les boxplots
+    ),
+    position = position_dodge(width = 0.75), # Aligne le texte sur le décalage des boîtes
+    vjust = -1.5, # Ajusté pour être juste au-dessus
+    size = 3.5,
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(~ phenotype + model, scales = "free_y") + # free_y est souvent mieux pour le RMSE
+  coord_cartesian(ylim = c(0, 2)) + # Ajuste selon tes valeurs réelles de RMSE
+  labs(
+    x = "Méthode de scoring",
+    y = "RMSE", # Changé car tes données sont du RMSE
+    title = "Performances Ridge (RMSE) selon la méthode de sélection",
+    subtitle = "Top 500 SNPs sélectionnés"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    legend.position = "bottom"
+  ) +
+  scale_fill_brewer(palette = "Set2")
+```
+
+```{r}
+
 ridge_perf[, method_context := paste(method, context, sep = "_")]
 # Calcul des médianes par groupe exact
 med_dt <- ridge_perf[
@@ -96,9 +142,7 @@ med_dt <- ridge_perf[
   .(R2_median = median(R2, na.rm = TRUE)),
   by = .(method_context, context, phenotype, model)
 ]
-```
 
-```{r}
 ggplot(ridge_perf, aes(x = method_context, y = R2, fill = context)) +
   geom_boxplot() +
   geom_text(
@@ -127,12 +171,12 @@ ggplot(ridge_perf, aes(x = method_context, y = R2, fill = context)) +
   scale_fill_brewer(palette = "Set2")
 
 ```
-
+# RF 
 ```{r}
 rf_grid <- data.table(
-  num.trees = c(200, 500),
-  mtry = c(3, 9 , 25),
-  min.node.size = c(1, 10)
+  num.trees = c(50,200, 500,1000),
+  mtry = c(10 , 50, 100),
+  min.node.size = c(5, 10,20, 50)
 )
 phenos_run   <- c("BudFlushSlope",
                   "HT2009",
@@ -144,14 +188,14 @@ phenos_run   <- c("BudFlushSlope",
                   "Rust",
                   "pheno_kin_aware","pheno_null","pheno_pop_aware" )
 methods_run  <- c("RF","VIP","FarmCPU","MLM")            # méthodes à évaluer
-contexts_run <- c( "residuals","phenotype","GWAS")
+contexts_run <- c( "residuals","phenotype","GWAS","LMM_residuals")
 
 rf_perf <- run_model_from_scores(
   all_scores_dt = all_scores_dt,
   phenotypes = phenos_run,
   methods = methods_run,
   contexts = contexts_run,
-  topK = 100,
+  topK = 500,
   X_full = X_full,
   y_full = pheno_dt,
   model_name = "rf",
@@ -203,63 +247,249 @@ ggplot(rf_perf, aes(x = method_context, y = R2, fill = context)) +
 
 ```
 
+# Ridge hybrid  
+
+```{r}
+hybrid_perf <- run_hybrid_pipeline(
+  all_scores_dt = all_scores_dt,
+  phenotypes = phenos_run,
+  X_full = X_full,
+  y_full = pheno_dt,
+  topK = 500, # Doit être identique à ton run précédent
+  method_gwas = "FarmCPU", context_gwas = "GWAS",
+  method_rf = "RF", context_rf = "LMM_residuals"
+)
+```
+```{r}
+full_comparison_dt <- rbindlist(list(ridge_perf, hybrid_perf), fill = TRUE)
+
+# 3. Créer une colonne propre pour le plot
+full_comparison_dt[, strategy := ifelse(method %in% c("Random", "Random_Hybrid"), "Control", 
+                                  ifelse(method == "Hybrid_Fusion", "Hybrid", "Single_Method"))]
+```
+
 ```{r}
 library(ggplot2)
 library(data.table)
+
+# 1. Préparation des labels et des groupes pour la clarté
+plot_df <- copy(full_comparison_dt)
+
+# On crée une colonne 'strategy' pour colorer par type d'approche
+plot_df[, strategy := "Single Method"]
+plot_df[method == "Hybrid_Fusion", strategy := "Hybrid (GWAS+RF)"]
+plot_df[method %in% c("Random", "Random_Hybrid"), strategy := "Random Control"]
+
+# On simplifie method_context pour le plot
+plot_df[, method_label := paste(method, context, sep = "\n")]
+
+# 2. Calcul des médianes pour l'annotation
+med_dt <- plot_df[, .(R2_median = median(R2, na.rm = TRUE)), 
+                  by = .(method_label, phenotype, strategy)]
+
+# 3. Le Graphique
+ggplot(plot_df, aes(x = reorder(method_label, R2, FUN = median), y = R2, fill = strategy)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.8) +
+  
+  # Ajout des étiquettes de médiane
+  geom_text(
+    data = med_dt,
+    aes(
+      x = method_label,
+      y = R2_median,
+      label = sprintf("%.2f", R2_median)
+    ),
+    vjust = -1.2, 
+    size = 3,
+    fontface = "bold",
+    inherit.aes = FALSE
+  ) +
+  
+  # Facettage par phénotype
+  facet_wrap(~ phenotype, scales = "free_y") +
+  
+  # Paramètres esthétiques
+  scale_fill_manual(values = c(
+    "Hybrid (GWAS+RF)" = "#D55E00",   # Orange vif pour la star du graphe
+    "Single Method" = "#0072B2",      # Bleu pour les méthodes classiques
+    "Random Control" = "#999999"      # Gris pour le témoin
+  )) +
+  
+  coord_cartesian(ylim = c(-0.05, 1.05)) + # Un peu de marge pour les textes
+  
+  labs(
+    title = "Comparaison des Performances : Sélection Hybride vs Méthodes Simples",
+    subtitle = paste("Modèle Ridge - Top", unique(plot_df$topK), "SNPs"),
+    x = "Stratégie de sélection des SNPs",
+    y = expression(R^2 ~ "(Variance Expliquée)"),
+    fill = "Type de Stratégie"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    strip.background = element_rect(fill = "grey95", color = NA),
+    strip.text = element_text(face = "bold"),
+    legend.position = "bottom",
+    panel.spacing = unit(1, "lines")
+  )
+```
+# RF Hybride
+
+```{r}
+rf_grid <- data.table(
+  num.trees = c(50,200, 500,1000),
+  mtry = c(10 , 50, 100),
+  min.node.size = c(5, 10,20, 50)
+)
+
+rf_hybrid_res <- run_rf_hybrid_pipeline(
+  all_scores_dt = all_scores_dt,
+  phenotypes = phenos_run,
+  X_full = X_full,
+  y_full = pheno_dt,
+  rf_grid = rf_grid,
+  topK = 500
+)
 ```
 
 ```{r}
-ridge_perf
+final_dt <- rbindlist(list(ridge_perf, hybrid_perf, rf_perf, rf_hybrid_res), fill = TRUE)
+
+# 3. Label de stratégie pour le plot
+final_dt[, strategy := "Simple"]
+final_dt[method == "Hybrid_Fusion", strategy := "Hybrid (GWAS+RF)"]
+final_dt[method %like% "Random", strategy := "Control"]
 ```
 
 ```{r}
-rf_perf
+
+# 1. Nettoyage et ordonnancement pour un affichage logique
+plot_final_dt <- copy(final_dt)
+
+# Harmonisation des noms de modèles
+plot_final_dt[model == "ridge", model_label := "RIDGE (Linéaire)"]
+plot_final_dt[model == "RF", model_label := "RF (Non-linéaire)"]
+
+# Ordre des stratégies pour l'axe X
+plot_final_dt[, strategy := factor(strategy, levels = c("Control", "Simple", "Hybrid (GWAS+RF)"))]
+# On s'assure que 'model' est bien rempli selon la nature des données
+plot_final_dt[!is.na(lambda_opt), model := "ridge"]
+plot_final_dt[!is.na(num.trees), model := "RF"]
+
+# Maintenant on recrée les labels proprement (attention à la casse "ridge" vs "RF")
+plot_final_dt[model == "ridge", model_label := "RIDGE (Linéaire)"]
+plot_final_dt[model == "RF", model_label := "RF (Non-linéaire)"]
+
+# On vérifie qu'il n'y a plus de NA dans model_label
+# sum(is.na(plot_final_dt$model_label)) 
+
+# On s'assure que l'ordre des stratégies est le bon pour le plot
+plot_final_dt[, strategy := factor(strategy, levels = c("Control", "Simple", "Hybrid (GWAS+RF)"))]
 ```
+
+```{r}
+library(ggplot2)
+
+# Recalcul des médianes pour les étiquettes
+med_final <- plot_final_dt[!is.na(model_label), .(R2_median = median(R2, na.rm = TRUE)), 
+                           by = .(phenotype, model_label, strategy)]
+
+ggplot(plot_final_dt[!is.na(model_label)], aes(x = strategy, y = R2, fill = strategy)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.15, size = 0.4) +
+  
+  # Médianes textuelles
+  geom_text(
+    data = med_final,
+    aes(x = strategy, y = R2_median, label = sprintf("%.2f", R2_median)),
+    vjust = -1.2, size = 2.5, fontface = "bold", inherit.aes = FALSE
+  ) +
+  
+  # Facettage : Modèles en lignes, Phénotypes en colonnes
+  facet_grid(model_label ~ phenotype, scales = "free_y") +
+  
+  scale_fill_manual(values = c(
+    "Control" = "#A9A9A9",          # Gris
+    "Simple" = "#56B4E9",           # Bleu
+    "Hybrid (GWAS+RF)" = "#E69F00"  # Orange
+  )) +
+  
+  theme_minimal() +
+  labs(
+    title = "Benchmark Final : Intégration de la Complexité Génomique",
+    subtitle = "Comparaison Ridge vs RF sur méthodes Simples, Hybrides et Aléatoires",
+    x = "Stratégie de Sélection (Top 500 SNPs)",
+    y = expression(R^2 ~ "(Variance Expliquée)"),
+    fill = "Stratégie"
+  ) +
+  theme(
+    strip.text.x = element_text(face = "bold", size = 7),
+    strip.text.y = element_text(face = "bold", size = 8),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+```
+
+
 
 # Comparaison Ridge et RF
 
 ```{r}
 # Filtrage sur RF_residuals
-ridge_perf_sub <- ridge_perf[method_context %in% c( "RF_residuals")]
-rf_perf_sub    <- rf_perf[method_context %in% c( "RF_residuals")]
+ridge_perf_sub <- ridge_perf[method_context %in% c( "RF_LMM_residuals","FarmCPU_GWAS","MLM_GWAS")]
+rf_perf_sub    <- rf_perf[method_context %in% c( "RF_LMM_residuals","FarmCPU_GWAS","MLM_GWAS")]
+ridge_perf_sub
+rf_perf_sub
+```
 
-# Ajouter colonne modèle
+
+```{r}
 ridge_perf_sub[, model := "Ridge"]
 rf_perf_sub[, model := "RF"]
 
-# Combiner avec rbindlist (fill = TRUE si colonnes diffèrent)
+# Combiner
 perf_dt <- rbindlist(list(ridge_perf_sub, rf_perf_sub), fill = TRUE)
 
-# Calcul des médianes pour annoter
 med_dt <- perf_dt[, .(R2_median = median(R2, na.rm = TRUE)),  
                   by = .(phenotype, model, method_context)]
-
-# Plot
-ggplot(perf_dt, aes(x = model, y = R2, fill = model)) +  # ici x = model plutôt que method_context
-  geom_boxplot() +
+ggplot(perf_dt, aes(x = method_context, y = R2, fill = model)) + 
+  geom_boxplot(alpha = 0.8) +
+  geom_jitter(aes(group = model), position = position_dodge(0.75), 
+              alpha = 0.3, size = 1) +
   geom_text(
     data = med_dt,
     aes(
-      x = model,
+      x = method_context,
       y = R2_median,
-      label = sprintf("%.2f", R2_median)
+      label = sprintf("%.2f", R2_median),
+      group = model
     ),
-    vjust = -1.5,
-    size = 4,
+    position = position_dodge(0.75), # Aligné avec les boxplots
+    vjust = -0.9,                   
+    size = 3.5,
+    fontface = "bold",
     inherit.aes = FALSE
   ) +
-  facet_wrap(~ phenotype , scales = "fixed") +
-  coord_cartesian(ylim = c(0, 1)) +
+  
+  facet_wrap(~ phenotype, scales = "free_y") +
+  scale_y_continuous(limits = c(0, 1.1), breaks = seq(0, 1, 0.2)) +
+  
   labs(
-    x = "Modèle",
+    x = "Méthode de sélection (Top 100)",
     y = expression(R^2),
-    title = "Performances des modèles avec le top 1000 du score importance résiduals"
+    title = "Comparaison Ridge vs RF sur Top 100 SNPs",
+    subtitle = "Performances évaluées par validation croisée (Outer Folds)",
+    fill = "Modèle de Prédiction"
   ) +
   theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(face = "bold")
+    axis.text.x = element_text(angle = 30, hjust = 1, size = 9),
+    strip.background = element_rect(fill = "grey95", color = NA),
+    strip.text = element_text(face = "bold"),
+    legend.position = "bottom"
   ) +
-  scale_fill_brewer(palette = "Set2")
-
+  scale_fill_manual(values = c("Ridge" = "#66c2a5", "RF" = "#fc8d62"))
 ```

@@ -259,3 +259,99 @@ rf_grid <- data.table(
   min.node.size = c(1, 10)
 )
 
+
+
+
+
+run_rf_hybrid_pipeline <- function(
+    all_scores_dt,
+    phenotypes,
+    X_full,
+    y_full,      # Liste de phénotypes comme dans ton pipeline
+    topK = 500,
+    rf_grid,
+    method_gwas = "FarmCPU", context_gwas = "GWAS",
+    method_rf = "RF", context_rf = "LMM_residuals",
+    K_outer = 5, K_inner = 5,
+    seed = 123,
+    n_random_repeats = 5 # RF est lent, on peut réduire un peu les répétitions
+) {
+  library(data.table)
+  set.seed(seed)
+  res_hybrid <- list()
+
+  for (ph in phenotypes) {
+    message("\n>>> RF Hybrid Pipeline | Phenotype: ", ph)
+
+    # 1. Sélection des deux pools de SNPs
+    pool_gwas <- all_scores_dt[phenotype == ph & method == method_gwas & context == context_gwas][order(rank)]
+    pool_rf   <- all_scores_dt[phenotype == ph & method == method_rf & context == context_rf][order(rank)]
+
+    if(nrow(pool_gwas) == 0 | nrow(pool_rf) == 0) {
+      warning("Scores manquants pour : ", ph)
+      next
+    }
+
+    # 2. Construction du set Hybride (Top K unique)
+    half <- floor(topK / 2)
+    snps_gwas <- pool_gwas[1:half, SNP]
+    snps_rf   <- pool_rf[1:half, SNP]
+
+    combined_snps <- unique(c(snps_gwas, snps_rf))
+
+    # Complétion si nécessaire pour atteindre exactement topK
+    if (length(combined_snps) < topK) {
+      needed <- topK - length(combined_snps)
+      extra <- setdiff(pool_gwas[(half+1):(half+needed+100), SNP], combined_snps)[1:needed]
+      combined_snps <- c(combined_snps, extra)
+    }
+
+    combined_snps <- combined_snps[combined_snps %in% colnames(X_full)]
+
+    # 3. Entraînement RF Hybride
+    message("... Training Hybrid RF Model")
+    perf_hyb <- run_rf_model(
+      X = X_full[, combined_snps, drop = FALSE],
+      y = y_full[[ph]],
+      K_outer = K_outer, K_inner = K_inner,
+      seed = seed,
+      model_params = list(rf_grid = rf_grid)
+    )
+
+    perf_hyb[, `:=`(
+      phenotype = ph,
+      method = "Hybrid_Fusion",
+      context = paste0(method_gwas, "+", method_rf),
+      model = "RF",
+      topK = topK,
+      n_snps = length(combined_snps)
+    )]
+    res_hybrid[[length(res_hybrid) + 1]] <- perf_hyb
+
+    # 4. Témoins Aléatoires (Répétés)
+    message("... Training Random RF Controls (", n_random_repeats, " repeats)")
+    for (i in seq_len(n_random_repeats)) {
+      snp_rand <- sample(colnames(X_full), length(combined_snps))
+
+      perf_rand <- run_rf_model(
+        X = X_full[, snp_rand, drop = FALSE],
+        y = y_full[[ph]],
+        K_outer = K_outer, K_inner = K_inner,
+        seed = seed + i,
+        model_params = list(rf_grid = rf_grid)
+      )
+
+      perf_rand[, `:=`(
+        phenotype = ph,
+        method = "Random_Hybrid",
+        context = "temoin",
+        model = "RF",
+        topK = topK,
+        n_snps = length(snp_rand)
+      )]
+      res_hybrid[[length(res_hybrid) + 1]] <- perf_rand
+    }
+  }
+
+  return(rbindlist(res_hybrid))
+}

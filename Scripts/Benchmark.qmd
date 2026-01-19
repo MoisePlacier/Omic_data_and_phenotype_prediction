@@ -1,0 +1,392 @@
+---
+title: "Benchmark de Prédiction Génomique : Approches Hybrides"
+author: "Placier Moïse & Fabrice Traore"
+date: last-modified
+format: 
+  html:
+    toc: true
+    code-fold: true
+    theme: cosmo
+---
+
+
+```{r setup, include=FALSE}
+# 1. Chargement des bibliothèques
+library(ranger)
+library(caret)
+library(data.table)
+library(ggplot2)
+library(arrow)
+library(glmnet)
+
+# 2. Source des fonctions (Assure-toi que les chemins sont corrects)
+source("R/run_ridge.R")
+source("R/run_rf.R")
+source("R/run_models_from_scores.R")
+
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+# Introduction et Chargement des Données
+
+Ce document présente les performances des modèles de prédiction (Ridge et Random Forest) en comparant des stratégies de sélection de SNPs simples, hybrides (fusion GWAS+RF) et aléatoires.
+
+```{r}
+# Chargement Phénotypes
+Pheno_FILE <- "data/pheno_null.rds"
+pheno_dt <- as.data.table(readRDS(Pheno_FILE))
+
+# Chargement Génotypes
+load("data/Genomic.rda")
+load("data/localisation.rda")
+
+# Préparation Matrices
+pheno_dt[, ID := rownames(Genomic)]
+X_full <- as.matrix(Genomic)
+
+# Chargement et Ranking des Scores SNP
+cols_to_read <- c("SNP", "phenotype", "method", "context", "mean")
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged_2.parquet", col_select = cols_to_read)
+
+# Calcul du rang (Frank) : plus le score 'mean' est haut, plus le rang est petit (Top SNP)
+all_scores_dt[, rank := frank(-mean, ties.method = "average"), by = .(phenotype, method, context)]
+```
+
+# Paramétrage Global
+
+```{r}
+phenos_run <- c("BudFlushSlope",
+                  "HT2009",
+                  "Dia2015_sqrt",
+                  "BrAnglVert",
+                  "CIRC2011",
+                  "CIRC2009",
+                  "RamifSyllep",
+                  "Rust",
+                  "pheno_kin_aware",
+                  "pheno_null",
+                  "pheno_pop_aware" )
+
+methods_run  <- c("RF", "VIP", "FarmCPU", "MLM")
+contexts_run <- c("residuals", "phenotype", "GWAS", "LMM_residuals")
+
+# Grille pour RF
+rf_grid <- data.table(
+  num.trees = c(200, 500),
+  mtry = c(10, 50),
+  min.node.size = c(5, 10)
+)
+
+TOP_K <- 500
+```
+
+# Benchmarks des Méthodes Simples (Baselines)
+Nous évaluons d'abord les performances lorsque les SNPs sont sélectionnés par une seule méthode à la fois.
+
+## Modèles Ridge (Linéaires)
+
+```{r}
+ridge_perf <- run_model_from_scores(
+  all_scores_dt = all_scores_dt,
+  phenotypes = phenos_run,
+  methods = methods_run,
+  contexts = contexts_run,
+  topK = TOP_K,
+  X_full = X_full,
+  y_full = pheno_dt,
+  model_name = "ridge",
+  model_fun = run_ridge_model,
+  model_params = list(standardize = TRUE),
+  K_outer = 5, K_inner = 5
+)
+```
+
+## Modèles Random Forest (Non-linéaires)
+
+```{r}
+rf_perf <- run_model_from_scores(
+  all_scores_dt = all_scores_dt,
+  phenotypes = phenos_run,
+  methods = methods_run,
+  contexts = contexts_run,
+  topK = TOP_K,
+  X_full = X_full,
+  y_full = pheno_dt,
+  model_name = "RF",
+  model_fun = run_rf_model,
+  model_params = list(rf_grid = rf_grid),
+  K_outer = 5, K_inner = 5
+)
+```
+
+# Stratégies Hybrides (Fusion GWAS + RF)
+
+Ici, nous testons si la combinaison des SNPs identifiés par GWAS (FarmCPU) et par Random Forest améliore la prédiction.
+
+## Ridge Hybride
+
+```{r}
+ridge_hybrid_res <- run_hybrid_pipeline(
+  all_scores_dt = all_scores_dt,
+  phenotypes = phenos_run,
+  X_full = X_full,
+  y_full = pheno_dt,
+  topK = TOP_K,
+  method_gwas = "FarmCPU", context_gwas = "GWAS",
+  method_rf = "RF", context_rf = "LMM_residuals"
+)
+```
+
+
+
+## Random Forest Hybride
+
+```{r}
+rf_hybrid_res <- run_rf_hybrid_pipeline(
+  all_scores_dt = all_scores_dt,
+  phenotypes = phenos_run,
+  X_full = X_full,
+  y_full = pheno_dt,
+  rf_grid = rf_grid,
+  topK = TOP_K
+)
+
+```
+
+# Automatisation 
+
+```{r}
+# 1. Liste des tailles de TopK à tester
+all_topK <- c(10000)
+
+# 2. Dossier de stockage
+res_dir <- "results/benchmarks"
+if (!dir.exists(res_dir)) dir.create(res_dir, recursive = TRUE)
+
+# 3. Boucle d'itération
+for (k in all_topK) {
+  
+  fname <- file.path(res_dir, paste0("full_res_top", k, ".rds"))
+  
+  if (file.exists(fname)) {
+    message(">>> [Top ", k, "] Résultats déjà existants. Chargement...")
+  } else {
+    message(">>> [Top ", k, "] Calculs en cours...")
+    
+    # --- RIDGE SIMPLE ---
+    r_perf <- run_model_from_scores(
+      all_scores_dt = all_scores_dt,
+      phenotypes = phenos_run,
+      methods = methods_run,
+      contexts = contexts_run,
+      topK = k,
+      X_full = X_full,
+      y_full = pheno_dt,
+      model_name = "ridge",
+      model_fun = run_ridge_model,
+      model_params = list(standardize = TRUE),
+      K_outer = 5, K_inner = 5
+    )
+    
+    # --- RF SIMPLE ---
+    f_perf <- run_model_from_scores(
+      all_scores_dt = all_scores_dt,
+      phenotypes = phenos_run,
+      methods = methods_run,
+      contexts = contexts_run,
+      topK = k,
+      X_full = X_full,
+      y_full = pheno_dt,
+      model_name = "RF",
+      model_fun = run_rf_model,
+      model_params = list(rf_grid = rf_grid),
+      K_outer = 5, K_inner = 5
+    )
+    
+    # --- HYBRIDE RIDGE ---
+    h_r_perf <- run_hybrid_pipeline(
+      all_scores_dt = all_scores_dt,
+      phenotypes = phenos_run,
+      X_full = X_full,
+      y_full = pheno_dt,
+      topK = k,
+      method_gwas = "FarmCPU", context_gwas = "GWAS",
+      method_rf = "RF", context_rf = "LMM_residuals"
+    )
+    h_r_perf[, model := "ridge"] # Sécurité label
+    
+    # --- HYBRIDE RF ---
+    h_f_perf <- run_rf_hybrid_pipeline(
+      all_scores_dt = all_scores_dt,
+      phenotypes = phenos_run,
+      X_full = X_full,
+      y_full = pheno_dt,
+      rf_grid = rf_grid,
+      topK = k
+    )
+    h_f_perf[, model := "RF"] # Sécurité label
+    
+    # FUSION ET SAUVEGARDE DE L'ÉTAPE
+    res_k <- rbindlist(list(r_perf, f_perf, h_r_perf, h_f_perf), fill = TRUE)
+    res_k[, topK := k] 
+    
+    saveRDS(res_k, fname)
+    message(">>> [Top ", k, "] Sauvegardé avec succès.")
+  }
+}
+```
+
+
+```{r}
+final_data_list <- lapply(all_topK, function(k) {
+  readRDS(file.path(res_dir, paste0("full_res_top", k, ".rds")))
+})
+all_comparisons_dt <- rbindlist(final_data_list, fill = TRUE)
+```
+
+```{r}
+all_comparisons_dt$method <- as.factor(all_comparisons_dt$method)
+all_comparisons_dt$phenotype <- as.factor(all_comparisons_dt$phenotype)
+all_comparisons_dt$context <- as.factor(all_comparisons_dt$context)
+all_comparisons_dt$model <- as.factor(all_comparisons_dt$model)
+
+summary(all_comparisons_dt)
+```
+
+
+
+# Intégration et Visualisation Finale
+
+```{r}
+all_comparisons_dt<-readRDS(file.path(res_dir, paste0("full_res_top", "5000", ".rds")))
+```
+
+```{r}
+
+
+final_dt <- copy(all_comparisons_dt)
+
+
+# 1. Création des colonnes nécessaires (AVANT le filtrage)
+final_dt[, method_context := paste(method, context, sep = " ")]
+final_dt[method == "Hybrid_Fusion", method_context := "HYBRID (Fusion)"]
+final_dt[method %like% "Random", method_context := "CONTROL (Random)"]
+
+final_dt[, strategy := "Single Method"]
+final_dt[method == "Hybrid_Fusion", strategy := "Hybrid (GWAS+RF)"]
+final_dt[method %like% "Random", strategy := "Control"]
+final_dt[, strategy := factor(strategy, levels = c("Control", "Single Method", "Hybrid (GWAS+RF)"))]
+
+# CRUCIAL : Création de model_label AVANT de l'utiliser dans le filtre
+final_dt[, model_label := NA_character_] # Initialisation
+final_dt[!is.na(lambda_opt), model_label := "RIDGE (Linéaire)"]
+final_dt[!is.na(num.trees), model_label := "RF (Non-linéaire)"]
+
+# 2. Définition des phénotypes cibles
+target_phenos <- c("BudFlushSlope", "HT2009", "Dia2015_sqrt", "BrAnglVert", 
+                  "CIRC2009", "RamifSyllep", "Rust", "pheno_kin_aware", "pheno_null")
+
+# 3. Filtrage du dataset principal
+# On retire les NA de model_label ici pour éviter l'erreur de calcul
+final_dt_filtered <- final_dt[phenotype %in% target_phenos & !is.na(model_label)]
+
+# 4. Calcul des médianes sur les données filtrées
+med_final <- final_dt_filtered[, .(R2_median = median(R2, na.rm = TRUE)), 
+                               by = .(phenotype, model_label, method_context, strategy)]
+
+# 5. Plot
+ggplot(final_dt_filtered, aes(x = reorder(method_context, R2, median), y = R2, fill = strategy)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  geom_text(data = med_final, 
+            aes(x = method_context, y = R2_median, label = sprintf("%.2f", R2_median)),
+            vjust = -1.5, size = 2, fontface = "bold", inherit.aes = FALSE) +
+  facet_grid(model_label ~ phenotype, scales = "free") +
+  scale_fill_manual(values = c("Control"="#A9A9A9", "Single Method"="#56B4E9", "Hybrid (GWAS+RF)"="#E69F00")) +
+  scale_x_discrete(labels = function(x) gsub(" ", "\u00A0", x)) + 
+  theme_minimal() +
+  labs(title = "Performance par Phénotype et Modèle : top 5 000 SNP",
+       y = expression(R^2), x = "Méthode x Contexte") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 7),
+    strip.text = element_text(face = "bold", size = 7),
+    plot.margin = margin(b = 60),
+    legend.position = "bottom"
+  )
+```
+
+
+## Comparaison Globale des Stratégies
+
+```{r}
+# Calcul des médianes pour ordonner et annoter
+med_final <- final_dt[!is.na(model_label), .(R2_median = median(R2, na.rm = TRUE)), 
+                        by = .(phenotype, model_label, method_context, strategy)]
+
+
+med_final <- med_final[
+  phenotype %in% c("BudFlushSlope",
+                  "HT2009",
+                  "Dia2015_sqrt",
+                  "BrAnglVert",
+                  "CIRC2009",
+                  "RamifSyllep",
+                  "Rust",
+                  "pheno_kin_aware",
+                  "pheno_null" )
+]
+```
+
+
+
+
+```{r}
+ggplot(med_final[!is.na(model_label)], aes(x = reorder(method_context, R2, median), y = R2, fill = strategy)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  # On ajoute les médianes en texte
+  geom_text(data = med_final, 
+            aes(x = method_context, y = R2_median, label = sprintf("%.2f", R2_median)),
+            vjust = -1.5, size = 2, fontface = "bold", inherit.aes = FALSE) +
+  # Facettage : Phénotypes en colonnes, Modèles en lignes
+  facet_grid(model_label ~ phenotype, scales = "free") +
+  scale_fill_manual(values = c("Control"="#A9A9A9", "Single Method"="#56B4E9", "Hybrid (GWAS+RF)"="#E69F00")) +
+  theme_minimal() +
+  labs(title = "Comparaison Détaillée des Méthodes et Contextes",
+       subtitle = "Classement par performance médiane (R2)",
+       y = expression(R^2), x = "Méthode x Contexte") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6),
+        legend.position = "bottom",
+        strip.text = element_text(face = "bold", size = 7))
+```
+
+
+## Résumé des meilleures performances par phénotype
+
+```{r}
+# On sélectionne la meilleure méthode par stratégie pour chaque phénotype
+best_by_strat <- med_final[, .SD[which.max(R2_median)], by = .(phenotype, model_label, strategy)]
+
+ggplot(best_by_strat, aes(x = strategy, y = R2_median, fill = strategy)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = method_context), position = position_stack(vjust = 0.5), size = 2, angle = 90) +
+  facet_grid(model_label ~ phenotype) +
+  scale_fill_manual(values = c("Control"="#A9A9A9", "Single Method"="#56B4E9", "Hybrid (GWAS+RF)"="#E69F00")) +
+  theme_minimal() +
+  labs(title = "Meilleure Méthode de chaque Stratégie",
+       subtitle = "Le texte dans les barres indique quelle combinaison méthode x contexte a gagné",
+       y = "Médiane R2") +
+  theme(axis.text.x = element_blank(), legend.position = "bottom")
+```
+
+
+```{r}
+best_models <- med_final[order(phenotype, -R2_median), .SD[1], by = phenotype]
+knitr::kable(best_models[, .(phenotype, model_label, strategy, R2_median)], 
+             col.names = c("Phénotype", "Modèle", "Stratégie", "R² Médian"),
+             caption = "Meilleure configuration identifiée pour chaque trait")
+```
+
+
+
+
+
+

@@ -38,8 +38,6 @@ merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
 
 ```
 
-
-
 # LM (Pheno \~ population )
 
 ```{r}

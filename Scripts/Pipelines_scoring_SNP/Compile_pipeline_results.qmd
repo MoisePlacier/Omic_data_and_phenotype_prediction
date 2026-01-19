@@ -94,9 +94,9 @@ DIRS <- list(
 
 DIRS <- list(
     RF = list(
-    root    = "results/RF_all_pheno_all_snp",
+    root    = "results/RF_LMM_res",
     method  = "RF",
-    context = "phenotype_all_SNP",
+    context = "LMM_residuals",
     score_col = "importance"
   )
 )
@@ -181,7 +181,7 @@ setcolorder(
 tmp_file <- tempfile(fileext = ".parquet")
 write_parquet(all_scores, tmp_file)
 
-final_file <- "results/RF_scores_all_pheno_all_snp.parquet"
+final_file <- "results/RF_scores_LMM_res.parquet"
 file.rename(tmp_file, final_file)
 
 ```
@@ -213,7 +213,7 @@ library(arrow)
 ```
 
 ```{r}
-dt1 <- read_parquet("results/gwas_results_pheno_null.parquet", as_data_table = TRUE)
+dt1 <- read_parquet("results/RF_scores_LMM_res.parquet", as_data_table = TRUE)
 ```
 ```{r}
 dt1[,p_value := NULL]
@@ -225,9 +225,12 @@ dt1
 
 unique(dt1$phenotype)
 ```
+```{r}
+dt2
+```
 
 ```{r}
-dt_all
+dt1
 ```
 
 ```{r}
@@ -242,7 +245,7 @@ tmp_file <- tempfile(fileext = ".parquet")
 write_parquet(dt_all, tmp_file)
 
 # Puis on déplace le fichier temporaire vers le chemin final
-final_file <- "results/all_scores_merged.parquet"
+final_file <- "results/all_scores_merged_2.parquet"
 file.rename(tmp_file, final_file)
 
 ```

@@ -93,68 +93,65 @@ run_ridge_from_scores <- function(
     K_outer = 5,
     K_inner = 5,
     seed = 123,
-    standardize = TRUE
+    standardize = TRUE,
+    n_random_repeats = 10  # Nouveau paramètre
 ) {
-
   library(data.table)
   cat(">>> ENTERING run_model_from_scores <<<\n")
 
-  set.seed(seed)   # pour reproductibilité
+  set.seed(seed)
   res_all <- list()
 
   for (ph in phenotypes) {
-    ## --- Ajouter le témoin aléatoire ---
-    snp_random <- sample(colnames(X_full), topK)
-    X_rand <- X_full[, snp_random, drop = FALSE]
 
-    perf_rand <- run_ridge_nested_cv(
-      X = X_rand,
-      y = y_full,
-      K_outer = K_outer,
-      K_inner = K_inner,
-      seed = seed + 1,  # décaler le seed pour varier
-      standardize = standardize
-    )
+    ## --- Témoin Aléatoire répété ---
+    message("Running Random controls for phenotype: ", ph)
+    for (i in seq_len(n_random_repeats)) {
+      # On change le seed à chaque répétition pour avoir des tirages différents
+      snp_random <- sample(colnames(X_full), topK)
+      X_rand <- X_full[, snp_random, drop = FALSE]
 
-    perf_rand_dt <- as.data.table(perf_rand)
-    perf_rand_dt[, `:=`(
-      phenotype = ph,
-      method = "Random",
-      context = "temoin",
-      topK = topK,
-      n_snps = ncol(X_rand)
-    )]
+      perf_rand <- run_ridge_nested_cv(
+        X = X_rand,
+        y = y_full,
+        K_outer = K_outer,
+        K_inner = K_inner,
+        seed = seed + i,
+        standardize = standardize
+      )
 
-    res_all[[length(res_all) + 1]] <- perf_rand_dt
+      perf_rand_dt <- as.data.table(perf_rand)
+      perf_rand_dt[, `:=`(
+        phenotype = ph,
+        method = "Random",
+        context = paste0("repeat_", i), # Pour identifier les différents tirages
+        topK = topK,
+        n_snps = ncol(X_rand)
+      )]
+      res_all[[length(res_all) + 1]] <- perf_rand_dt
+    }
 
+    ## --- Boucle sur tes méthodes expertes ---
     for (m in methods) {
       for (ctx in contexts) {
 
-        message(
-          "Running ridge | phenotype = ", ph,
-          " | method = ", m,
-          " | context = ", ctx
-        )
+        message("Running ridge | ph = ", ph, " | method = ", m, " | ctx = ", ctx)
 
-        cat(
-          "Running ridge | phenotype = ", ph,
-          " | method = ", m,
-          " | context = ", ctx
-        )
-
-        ## Sélection des TOP K SNPs
+        # Sélection des TOP K SNPs basée sur le rang
         snp_sel <- all_scores_dt[
-          phenotype == ph &
-            method == m &
-            context == ctx
+          phenotype == ph & method == m & context == ctx
         ][order(rank)][1:topK, SNP]
 
-        if (length(snp_sel) < 2) next
+        # Sécurité : vérifier que les SNPs sont bien dans la matrice de génotypage
+        snp_sel <- snp_sel[snp_sel %in% colnames(X_full)]
 
-        ## Sous-matrice X
-        X_sub <- X_full[, colnames(X_full) %in% snp_sel, drop = FALSE]
+        if (length(snp_sel) < 2) {
+          warning("Pas assez de SNPs trouvés pour ", m, " ", ctx)
+          next
+        }
 
-        ## Run ridge nested CV
+        X_sub <- X_full[, snp_sel, drop = FALSE]
+
         perf <- run_ridge_nested_cv(
           X = X_sub,
           y = y_full,
@@ -172,7 +169,6 @@ run_ridge_from_scores <- function(
           topK = topK,
           n_snps = ncol(X_sub)
         )]
-
         res_all[[length(res_all) + 1]] <- perf_dt
       }
     }
@@ -203,3 +199,92 @@ run_ridge_model <- function(
 }
 
 
+
+
+run_hybrid_pipeline <- function(
+    all_scores_dt,
+    phenotypes,
+    X_full,
+    y_full,
+    topK = 500,
+    method_gwas = "FarmCPU", context_gwas = "GWAS",
+    method_rf = "RF", context_rf = "LMM_residuals",
+    K_outer = 5, K_inner = 5,
+    seed = 123
+) {
+  library(data.table)
+  set.seed(seed)
+  res_hybrid <- list()
+
+  for (ph in phenotypes) {
+    message(">>> Processing Hybrid Model for: ", ph)
+
+    # 1. Sélection dirigée : GWAS + RF
+    pool_gwas <- all_scores_dt[phenotype == ph & method == method_gwas & context == context_gwas][order(rank)]
+    pool_rf   <- all_scores_dt[phenotype == ph & method == method_rf & context == context_rf][order(rank)]
+
+    if(nrow(pool_gwas) == 0 | nrow(pool_rf) == 0) {
+      warning("Scores manquants pour le phénotype: ", ph)
+      next
+    }
+
+    # On prend la moitié de chaque
+    half <- floor(topK / 2)
+    snps_gwas <- pool_gwas[1:half, SNP]
+    snps_rf   <- pool_rf[1:half, SNP]
+
+    # Fusion et complétion pour atteindre exactement topK unique
+    combined_snps <- unique(c(snps_gwas, snps_rf))
+
+    if (length(combined_snps) < topK) {
+      needed <- topK - length(combined_snps)
+      # On complète avec les suivants du GWAS (ou RF) pour boucher les trous
+      extra <- setdiff(pool_gwas[(half+1):(half+needed+50), SNP], combined_snps)[1:needed]
+      combined_snps <- c(combined_snps, extra)
+    }
+
+    # Filtrage sécurité matrice
+    combined_snps <- combined_snps[combined_snps %in% colnames(X_full)]
+
+    # 2. Run du modèle Hybride
+    perf_hyb <- run_ridge_nested_cv(
+      X = X_full[, combined_snps, drop = FALSE],
+      y = y_full[[ph]],
+      K_outer = K_outer, K_inner = K_inner,
+      seed = seed
+    )
+
+    perf_hyb_dt <- as.data.table(perf_hyb)
+    perf_hyb_dt[, `:=`(
+      phenotype = ph,
+      method = "Hybrid_Fusion",
+      context = paste0(method_gwas, "+", method_rf),
+      model = "ridge",
+      topK = topK,
+      n_snps = length(combined_snps)
+    )]
+    res_hybrid[[length(res_hybrid) + 1]] <- perf_hyb_dt
+
+    # 3. Témoin aléatoire dédié (même taille que l'hybride)
+    snp_rand <- sample(colnames(X_full), length(combined_snps))
+    perf_rand <- run_ridge_nested_cv(
+      X = X_full[, snp_rand, drop = FALSE],
+      y = y_full[[ph]],
+      K_outer = K_outer, K_inner = K_inner,
+      seed = seed + 1
+    )
+
+    perf_rand_dt <- as.data.table(perf_rand)
+    perf_rand_dt[, `:=`(
+      phenotype = ph,
+      method = "Random_Hybrid",
+      context = "temoin",
+      model = "ridge",
+      topK = topK,
+      n_snps = length(snp_rand)
+    )]
+    res_hybrid[[length(res_hybrid) + 1]] <- perf_rand_dt
+  }
+
+  return(rbindlist(res_hybrid))
+}

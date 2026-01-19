@@ -19,6 +19,7 @@ library(qqman)
 library(mixOmics)
 library(glmnet)
 library(corrplot)
+source("R/Compute_ARI.R")
 ```
 
 ## leccture des scores
@@ -27,7 +28,7 @@ library(corrplot)
 library(arrow)
 cols_to_read <- c(
   "SNP", "phenotype", "method", "context", "mean","sd")
-all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged.parquet",
+all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged_2.parquet",
                               as_data_table = TRUE,
                               col_select = cols_to_read)
 
@@ -57,10 +58,28 @@ all_scores_dt[, chrom_num := as.numeric(sub("^Chr", "", chrom))]
 
 
 ```{r}
-unique(all_scores_dt$phenotype)
+unique(all_scores_dt$method_context)
+```
+
+```{r}
+method_context_list <- unique(all_scores_dt[, .(method, context)])
+```
+
+```{r}
+method_context_list
 ```
 
 
+```{r}
+# Filtrage correct (ici pour un phénotype donné pour ne pas surcharger le graphe)
+dt_plot <- all_scores_dt[method == "RF" & context == "residuals" & phenotype == "CIRC2009"]
+
+```
+
+```{r}
+dt_na <- dt_plot[!complete.cases(dt_plot)]
+dt_na
+```
 
 # TOP K comparaison 
 
@@ -128,6 +147,7 @@ phenos_run <- c(
   "Rust","pheno_pop_aware","pheno_kin_aware","pheno_null"
 )
 topK_run = 100
+
 RF_res_pheno <- compare_all_phenos_fast(
   all_scores_dt, phenos_run, "RF", "phenotype", topK = topK_run
 )
@@ -150,6 +170,9 @@ farmcpu_run <- compare_all_phenos_fast(
 mlm_run <- compare_all_phenos_fast(
   all_scores_dt,phenos_run,"MLM", "GWAS", topK = topK_run)
 
+RF_LMM_res <- compare_all_phenos_fast(
+  all_scores_dt,phenos_run,"RF", "LMM_residuals", topK = topK_run)
+
 ```
 
 ```{r}
@@ -164,8 +187,10 @@ farmcpu_run[, context := "FarmCPU"]
 
 mlm_run[, context := "MLM"]
 
+RF_LMM_res[, context := "RF_LMM_residuals"]
+
 # Fusionner les deux résultats pour comparer
-res_all <- rbind(RF_res_pheno, RF_res_res,VIP_res_pheno,VIP_res_res,farmcpu_run,mlm_run)
+res_all <- rbind(RF_res_pheno, RF_res_res,farmcpu_run,mlm_run,RF_LMM_res)
 ```
 
 ```{r}
@@ -194,35 +219,30 @@ library(ggplot2)
 # --- Liste unique des combinaisons méthode × contexte ---
 method_context_list <- unique(all_scores_dt[, .(method, context)])
 method_context_list[, method_context := paste(method, context, sep = "_")]
+```
 
+
+
+```{r}
 # --- Fonction pour calculer le recouvrement topK entre deux combinaisons pour un phéno ---
 topK_overlap_mc <- function(dt, pheno, mc1, mc2, topK = 100) {
-  
-  # Séparer méthode et contexte
-  mc1_split <- strsplit(mc1, "_")[[1]]
-  mc2_split <- strsplit(mc2, "_")[[1]]
-  
-  # Extraire les rangs en évitant le conflit avec la fonction rank()
-  dt1 <- dt[phenotype == pheno & method == mc1_split[1] & context == mc1_split[2],
-            .(SNP, rank1 = get("rank"))]
-  dt1 <- dt1[!is.na(rank1)]
-  
-  dt2 <- dt[phenotype == pheno & method == mc2_split[1] & context == mc2_split[2],
-            .(SNP, rank2 = get("rank"))]
-  dt2 <- dt2[!is.na(rank2)]
-  
-  # Si une des combinaisons est absente
-  if(nrow(dt1) == 0 || nrow(dt2) == 0) return(NA_real_)
-  
-  # Merge sur les SNPs communs
-  merged <- merge(dt1, dt2, by = "SNP")
-  if(nrow(merged) == 0) return(0)
-  
-  # TopK overlap
-  top1 <- merged[order(rank1)][1:min(topK, .N), SNP]
-  top2 <- merged[order(rank2)][1:min(topK, .N), SNP]
-  
-  length(intersect(top1, top2)) / min(topK, .N)
+   
+   # Filtrer directement sur la colonne combinée method_context
+   dt1 <- dt[phenotype == pheno & method_context == mc1, .(SNP, rank1 = rank)]
+   dt1 <- dt1[!is.na(rank1)]
+   
+   dt2 <- dt[phenotype == pheno & method_context == mc2, .(SNP, rank2 = rank)]
+   dt2 <- dt2[!is.na(rank2)]
+   
+   if(nrow(dt1) == 0 || nrow(dt2) == 0) return(NA_real_)
+   
+   merged <- merge(dt1, dt2, by = "SNP")
+   if(nrow(merged) == 0) return(0)
+   
+   top1 <- merged[order(rank1)][1:min(topK, .N), SNP]
+   top2 <- merged[order(rank2)][1:min(topK, .N), SNP]
+   
+   length(intersect(top1, top2)) / min(topK, .N)
 }
 
 # --- Fonction pour construire la matrice de recouvrement topK pour un phéno ---
@@ -241,22 +261,25 @@ make_overlap_matrix <- function(dt, pheno, topK = 100) {
 }
 ```
 
+
 ```{r}
 plot_overlap <- function(overlap_df){
   ggplot(overlap_df, aes(x = Var2, y = Var1, fill = value)) +
   geom_tile() +
   geom_text(aes(label = round(value, 2))) +
   scale_fill_gradient(low = "white", high = "steelblue", na.value = "grey90") +
-  labs(title = paste("Top", 1000, "SNP overlap "),
+  labs(title = paste("Top", 100, "SNP overlap pour le phéno pop aware"),
        x = "Méthode × Contexte", y = "Méthode × Contexte") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))}
 ```
 
 
+
+
 ```{r}
 pheno_example <- "CIRC2009"
-overlap_mat <- make_overlap_matrix(all_scores_dt, pheno_example, topK = 1000)
+overlap_mat <- make_overlap_matrix(all_scores_dt, pheno_example, topK = 100)
 ```
 
 ```{r}
@@ -266,9 +289,9 @@ overlap_BudFlushSlope <- make_overlap_matrix(all_scores_dt, "BudFlushSlope", top
 
 
 ```{r}
-overlap_mat_null <- make_overlap_matrix(all_scores_dt, "pheno_null", topK = 1000)
-overlap_mat_kin <- make_overlap_matrix(all_scores_dt, "pheno_kin_aware", topK = 1000)
-overlap_mat_pop <- make_overlap_matrix(all_scores_dt, "pheno_pop_aware", topK = 1000)
+overlap_mat_null <- make_overlap_matrix(all_scores_dt, "pheno_null", topK = 100)
+overlap_mat_kin <- make_overlap_matrix(all_scores_dt, "pheno_kin_aware", topK = 100)
+overlap_mat_pop <- make_overlap_matrix(all_scores_dt, "pheno_pop_aware", topK = 100)
 ```
 
 
@@ -282,6 +305,9 @@ setnames(overlap_df, c("Var1","Var2","value"))
 plot_overlap(overlap_df)
 
 ```
+```{r}
+overlap_df
+```
 
 
 
@@ -291,10 +317,10 @@ plot_overlap(overlap_df)
 
 ```{r}
 dt_plot <- all_scores_dt[
-  method_context %in% c("RF_residuals","RF_phenotype","VIP_phenotype","VIP_residuals","FarmCPU_GWAS","MLM_GWAS") &
+  method_context %in% c("VIP_residuals","RF_residuals","RF_phenotype","FarmCPU_GWAS","MLM_GWAS") &
   chrom %in% c("Chr13") &
-  rank <200 &
-  phenotype %in% c("pheno_null","pheno_kin_aware","pheno_pop_aware","CIRC2009","BudFlushSlope")
+  #rank <200 &
+  phenotype %in% c("CIRC2009", "HT2009", "pheno_null", "pheno_pop_aware","pheno_kin_aware")
 ]
 
 ggplot(dt_plot, aes(x = pos, y = score_scaled, color = phenotype, alpha = score_scaled)) +
@@ -303,7 +329,7 @@ ggplot(dt_plot, aes(x = pos, y = score_scaled, color = phenotype, alpha = score_
   coord_cartesian(ylim = c(0,1)) +  # force y entre 0 et 1 sans couper les données
   theme_minimal() +
   labs(
-    title = "Scores moyens des SNP du chromosome 10 par phénotype et méthode de scoring",
+    title = "Scores moyens des SNP du chromosome 13 par phénotype et méthode de scoring",
     x = "Position SNP",
     y = "Score normalisé",
     alpha = "Score"
@@ -342,6 +368,386 @@ p <- ggplot(
 ggplotly(p, tooltip = "text")  # rend le graphique interactif
 
 ```
+
+## Analyse colocalisation spatiale / ARI 
+
+Afin d'évaluer la stabilité et la complémentarité des méthodes, nous avons implémenté une analyse par fenêtre glissante le long du génome. Pour chaque fenêtre, nous calculons l'Indice de Rand Ajusté (ARI) entre les partitions de SNPs "Top K" issues des deux approches.
+
+### Objectif du Manhattan Plot de Concordance (ARI) : 
+
+L'objectif de cette visualisation est de quantifier la concordance spatiale des marqueurs sélectionnés et de discriminer les régions chromosomiques selon leur comportement statistique :Validation des Locus Consensus (ARI $\to$ 1) : Les régions présentant un ARI élevé indiquent une convergence des méthodes vers les mêmes cibles génomiques. Ces zones représentent des signaux additifs robustes, identifiés de manière consistante par les modèles linéaires et les algorithmes d'apprentissage.
+
+### Identification des Niches de Non-Linéarité (ARI $\le$ 0) : 
+
+Les chutes locales de l'ARI, lorsqu'elles coïncident avec des scores d'importance élevés en Random Forest, révèlent des régions où le signal biologique est préférentiellement capturé par l'approche non linéaire. Ces zones constituent des candidats privilégiés pour l'étude de l'épistasie, car elles indiquent que la RF identifie des combinaisons de SNPs ignorées par le modèle de GWAS classique.
+
+Résolution du Biais de Liaison (LD) : Contrairement à une comparaison globale, cette métrique locale permet de s'affranchir de la compétition entre SNPs en déséquilibre de liaison, offrant une mesure de la stabilité régionale du signal plutôt que de la simple identité ponctuelle des marqueurs.
+
+
+```{r}
+pairs_to_compare <- list(
+  c("FarmCPU_GWAS", "RF_LMM_residuals"),
+  c("MLM_GWAS", "RF_LMM_residuals"),
+  c("FarmCPU_GWAS", "MLM_GWAS"),
+  c("RF_LMM_residuals", "RF_residuals")
+  
+)
+```
+
+
+```{r}
+ari_snp <- compute_multi_ari(
+  all_scores_dt, "CIRC2011", pairs_to_compare,
+  mode = "snp", snps_per_window = 1000, topK = 100
+)[, if (.N >= 2) .SD, by = .(pair, chrom_num)]
+
+plot_ari_profiles(ari_snp, "fenêtres SNP")
+```
+
+
+```{r}
+ari_bp <- compute_multi_ari(
+  all_scores_dt, "CIRC2011", pairs_to_compare,
+  mode = "bp", window_bp = 5e5, topK = 100
+)[, if (.N >= 2) .SD, by = .(pair, chrom_num)]
+
+plot_ari_profiles(ari_bp, "fenêtres physiques")
+```
+### Région star 
+```{r}
+
+dt_pair <- all_scores_dt[phenotype == "Rust" & 
+                         method_context %in% c("FarmCPU_GWAS", "RF_LMM_residuals")]
+
+setorder(dt_pair, method_context, chrom_num, pos)
+dt_pair[, snp_rank_in_chr := 1:.N, by = .(method_context, chrom_num)]
+dt_pair[, window_id := floor((snp_rank_in_chr - 1) / 300)]
+
+# Calcul du meilleur rang global (min rank) par fenêtre pour CHAQUE méthode
+win_comparison <- dt_pair[, .(best_rank = min(rank, na.rm = TRUE)), 
+                          by = .(method_context, chrom_num, window_id)]
+
+win_wide <- dcast(win_comparison, chrom_num + window_id ~ method_context, 
+                  value.var = "best_rank")
+
+# Fusion avec l'ARI pour la divergence locale
+dt_stars <- merge(ari_snp[pair == "FarmCPU_GWAS vs RF_LMM_residuals"], 
+                  win_wide, by = c("chrom_num", "window_id"))
+
+# On cherche là où RF_LMM_residuals est petit (Top rang) 
+# ET FarmCPU_GWAS est grand (Mauvais rang)
+dt_stars[, delta_rank := FarmCPU_GWAS - RF_LMM_residuals]
+
+# Filtrage des "Stars" : ARI faible ET un Delta de rang énorme
+# On veut que la RF ait au moins un SNP dans le top 1000 global (RF_LMM_residuals < 1000)
+# Et que l'écart avec le GWAS soit maximal
+locus_stars <- dt_stars[ari < 0.1 & RF_LMM_residuals < 2000]
+top_outliers <- locus_stars[order(-delta_rank)][1:10]
+
+print(top_outliers[, .(chrom_num, window_id, 
+                       ARI = ari, 
+                       Rank_RF = RF_LMM_residuals, 
+                       Rank_GWAS = FarmCPU_GWAS, 
+                       Désaccord = delta_rank)])
+```
+
+
+```{r}
+target_chr <- top_outliers$chrom_num[7]
+target_win <- top_outliers$window_id[7]
+
+# Récupération des bornes réelles
+bounds <- rf_data[chrom_num == target_chr & window_id == target_win, 
+                  .(start = min(pos), end = max(pos))]
+
+# Extraction des données de scoring pour le plot (avec marge de 100kb)
+margin <- 100000
+zoom_plot_dt <- all_scores_dt[chrom_num == target_chr & 
+                               pos >= (bounds$start - margin) & 
+                               pos <= (bounds$end + margin) & 
+                               phenotype == target_pheno &
+                               method_context %in% c("FarmCPU_GWAS", "RF_LMM_residuals")]
+
+library(plotly)
+
+# 1. On crée une copie propre pour éviter les warnings data.table
+plot_dt <- copy(zoom_plot_dt)
+
+# 2. Création du hover text
+plot_dt[, hover_text := paste0(
+  "SNP: ", SNP, 
+  "<br>Position: ", round(pos/1e6, 3), " Mb",
+  "<br>Rang Global: ", rank, 
+  "<br>Score Scaled: ", round(score_scaled, 4),
+  "<br>Méthode: ", method_context
+)]
+
+# 3. Construction du ggplot
+p <- ggplot(plot_dt, aes(x = pos / 1e6, y = score_scaled, color = method_context)) +
+  # Fond Gold robuste pour Plotly
+  annotate("rect", xmin = bounds$start/1e6, xmax = bounds$end/1e6, 
+           ymin = -0.05, ymax = 1.05, # On fixe les limites Y pour garantir la visibilité
+           fill = "gold", alpha = 0.2) +
+  
+  geom_line(aes(group = method_context), alpha = 0.3) +
+  
+  # Utilisation de l'esthétique 'label' au lieu de 'text' (mieux supporté par plotly dans certains contextes)
+  geom_point(aes(label = hover_text), size = 2, alpha = 0.8) +
+  
+  scale_color_manual(values = c("FarmCPU_GWAS" = "#226ad8", "RF_LMM_residuals" = "#d82222")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 8), # Correction du point final superflu
+    panel.grid.minor = element_blank()
+  ) +
+  labs(title = paste("Locus Star - Chromosome", target_chr),
+       x = "Position (Mb)", y = "Score Normalisé")
+
+# 4. Conversion Plotly avec gestion spécifique des tooltips
+# On utilise tooltip = "label" pour correspondre à l'aes(label = ...)
+p_interactif <- ggplotly(p, tooltip = "label") %>% 
+  layout(showlegend = TRUE)
+
+# Affichage
+p_interactif
+```
+
+
+
+
+# distance de Wasserstein
+
+L'approche consiste à calculer la distance de Wasserstein (EMD) entre les profils de scores normalisés, stratifiée par chromosome et par fenêtre génomique. Cette méthode traite les scores d'importance comme une distribution de masse, mesurant le coût optimal pour transformer le paysage de signal d'une méthode (ex. GWAS) en une autre (ex. RF).
+
+La pertinence de l'EMD réside dans sa capacité à intégrer la proximité physique entre les SNPs, contrairement à une corrélation classique qui ignore la topologie du génome. Elle permet d'identifier des QTL complémentaires en quantifiant précisément les zones où la Random Forest détecte des signaux spatialement distants ou absents du GWAS linéaire, révélant ainsi des régions d'intérêt biologique (épistasie, dominance) inaccessibles aux méthodes traditionnelles.
+
+```{r}
+all_scores_dt
+```
+## distance globale de Wasserstein
+```{r}
+pairs <- list(
+  c("FarmCPU_GWAS", "RF_LMM_residuals"),
+  c("FarmCPU_GWAS", "RF_phenotype"),
+  c("FarmCPU_GWAS", "MLM_GWAS")
+)
+
+# Calcul global pour un phénotype
+global_results <- rbindlist(lapply(pairs, function(p) {
+  val <- compute_global_linear_emd(all_scores_dt, "Rust", p[1], p[2], score_col = "mean")
+  data.table(comparaison = paste(p[1], "vs", p[2]), emd_globale = val)
+}))
+
+print(global_results)
+```
+FarmCPU_GWAS vs RF_phenotype ($0.01095$) :  La divergence est 40 fois plus élevée que le témoin linéaire. Une EMD de ~0.01 sur l'échelle du génome entier signifie qu'environ 1% de la "masse d'importance" totale a été déplacée d'un bout à l'autre du génome (ou répartie différemment). C'est une réorganisation significative.
+
+## distance de Wasserstein a l'échelle du chromose 
+
+### Multi
+
+```{r}
+pairs <- list(
+  c("FarmCPU_GWAS", "RF_LMM_residuals"),
+  c("FarmCPU_GWAS", "RF_phenotype"),
+  c("FarmCPU_GWAS", "MLM_GWAS")
+)
+
+res_chr_multi <- rbindlist(lapply(pairs, function(p) {
+  dt_res <- compute_emd_by_chromosome(
+    dt = all_scores_dt, 
+    phenotype_target = "Rust", 
+    method1 = p[1], 
+    method2 = p[2],
+    score_col = "mean"
+  )
+  # On ajoute une colonne pour identifier la comparaison
+  dt_res[, comparaison := paste(p[1], "\nvs\n", p[2])]
+  return(dt_res)
+}))
+```
+
+
+```{r}
+plot_emd_barplot_chr(res_chr_multi, title_label = "- Rust")
+```
+
+### Mono comparaison
+
+```{r}
+res_chr <- compute_emd_by_chromosome(
+  dt = all_scores_dt, 
+  phenotype_target = "Rust",
+  method1 = "FarmCPU_GWAS",      # Vérifie tes noms exacts dans method_context
+  method2 = "RF_LMM_residuals",  # Vérifie tes noms exacts
+  score_col = "score_scaled"     # Essai avec le score normalisé (0-1)
+)
+
+print(res_chr) # Regarde quel chromosome a la plus grosse EMD
+```
+
+
+
+### Distance de Wasserstein locale (fenêtres de 2 Mb)
+
+```{r}
+pairs <- list(
+  c("FarmCPU_GWAS", "RF_LMM_residuals"),
+  c("FarmCPU_GWAS", "RF_phenotype"),
+  c("FarmCPU_GWAS", "MLM_GWAS")
+)
+
+res_win_multi <- rbindlist(lapply(pairs, function(p) {
+  dt_res <- compute_emd_by_bp_window(
+    dt = all_scores_dt, 
+    phenotype_target = "Rust", 
+    method1 = p[1], 
+    method2 = p[2], 
+    window_bp = 5e5, # 500kb pour plus de précision
+    score_col = "mean"
+  )
+  # On ajoute une colonne pour identifier la comparaison
+  dt_res[, comparaison := paste(p[1], "\nvs\n", p[2])]
+  return(dt_res)
+}))
+
+plot_emd_multi_profiles(res_win_multi, title_label = "- Phénotype Rust")
+```
+### Mono
+
+```{r}
+
+res_win <- compute_emd_by_bp_window(
+  dt = all_scores_dt,
+  phenotype_target = "Rust",
+  method1 = "FarmCPU_GWAS",
+  method2 = "RF_LMM_residuals",
+  window_bp = 5e5,               # Fenêtres de 2 Mb
+  score_col = "mean"             # Essai avec le score brut
+)
+
+# 3. Visualiser
+plot_emd_profiles(res_win, title_label = "- Rust : GWAS vs RF")
+```
+
+L'ARI mesure la concordance binaire des sélections, tandis que l'EMD mesure la continuité du paysage génomique, une approche de plus en plus plébiscitée en épigénomique pour comparer des profils de densité de signal.
+
+
+
+# EMD dans l'espace du déséquilibre de liaison
+
+Pour s'affranchir de la distance physique et se concentrer sur la redondance biologique, nous avons calculé l'EMD dans l'espace du déséquilibre de liaison (LD). Cette approche permet de confirmer si la Random Forest capture les mêmes signaux que le GWAS, même lorsqu'elle sélectionne des marqueurs différents au sein d'un même bloc d'haplotypes.
+
+
+```{r}
+
+load("data/Genomic.rda")
+geno_dt  <- as.data.table(Genomic,   keep.rownames = "ID")
+X_full <- as.matrix(
+  geno_dt[, !"ID"]
+)
+
+my_pairs <- list(
+  c("FarmCPU_GWAS", "RF_LMM_residuals"),
+  c("FarmCPU_GWAS", "RF_phenotype"),
+  c("FarmCPU_GWAS", "MLM_GWAS")
+)
+
+
+results_ld <- compute_multi_ld_emd(
+  geno_mat = X_full,
+  scores_dt = all_scores_dt,
+  phenotype_target = "Rust",
+  pairs_list = my_pairs,
+  top_k = 5000,
+  score_col = "mean")
+```
+
+```{r}
+results_ld
+```
+
+Le score de 0.42 indique que la majorité de l'importance identifiée par la Random Forest se situe sur des blocs d'haplotypes statistiquement distincts de ceux identifiés par le GWAS. C'est différent, et même en tenant compte de la structure de liaison du génome, on ne parvient pas à réconcilier les deux signaux. 
+
+0.02 (MLM vs GWAS) : Même haplotype, même signal.
+
+0.42 (RF corrigée vs GWAS) : Signaux partiellement divergents, mais une base commune subsiste.
+
+0.64 (RF brute vs GWAS) : Rupture haplotype. La RF exploite des combinaisons de variants ou des locus qui sont dans le "blind spot" (angle mort) du GWAS.
+
+
+```{r}
+extract_rf_exclusive_snps <- function(geno_mat, scores_dt, meth_gwas="FarmCPU_GWAS", meth_rf="RF_LMM_residuals", top_k=5000) {
+  
+  # 1. Sélection des Tops (Utilisation de order() qui accepte abs())
+  top_gwas <- scores_dt[method_context == meth_gwas][order(-abs(mean))][1:top_k]
+  top_rf <- scores_dt[method_context == meth_rf][order(-abs(mean))][1:top_k]
+  
+  # 2. Calcul du LD
+  union_snps <- unique(c(top_gwas$SNP, top_rf$SNP))
+  geno_sub <- geno_mat[, union_snps]
+  
+  message("Calcul de la corrélation croisée...")
+  ld_cross <- cor(geno_sub[, top_rf$SNP], geno_sub[, top_gwas$SNP], use = "pairwise.complete.obs")^2
+  
+  # 3. LD max avec le GWAS
+  # On utilise matrixStats::rowMaxs si disponible pour la vitesse, sinon apply
+  top_rf[, max_ld_with_gwas := apply(ld_cross, 1, max, na.rm = TRUE)]
+  
+  # 4. Filtrage des exclusifs (LD < 0.1)
+  rf_exclusive <- top_rf[max_ld_with_gwas < 0.1]
+  
+  # Correction du tri : on crée une colonne temporaire pour trier proprement
+  rf_exclusive[, abs_importance := abs(mean)]
+  setorder(rf_exclusive, -abs_importance)
+  
+  return(rf_exclusive)
+}
+
+# --- Exécution ---
+exclusive_candidates <- extract_rf_exclusive_snps(X_full, all_scores_dt)
+
+# Afficher les 10 meilleurs candidats
+print(head(exclusive_candidates[, .(SNP, chrom_num, pos, mean, max_ld_with_gwas)], 10))
+```
+```{r}
+library(ggplot2)
+
+# On prépare les données pour le plot
+# Note : On utilise les scores originaux pour l'axe Y pour garder l'échelle parlante
+plot_data <- all_scores_dt[method_context %in% c("FarmCPU_GWAS", "RF_LMM_residuals")]
+plot_data[, y_val := ifelse(method_context == "FarmCPU_GWAS", -abs(mean), abs(mean))]
+
+# On identifie nos "Exclusive" pour les colorier
+exclusive_snps <- exclusive_candidates$SNP
+
+ggplot(plot_data, aes(x = pos / 1e6, y = y_val)) +
+  # Points de fond
+  geom_point(alpha = 0.2, color = "grey60", size = 0.5) +
+  
+  # Mise en évidence des SNPs exclusifs (ceux qui font monter l'EMD)
+  geom_point(data = plot_data[SNP %in% exclusive_snps & y_val > 0], 
+             aes(color = "Exclusif RF (LD indépendant)"), size = 1.2) +
+  
+  # Zoom sur ton SNP monstre
+  geom_text(data = plot_data[SNP == "Chr18_10304672"], 
+            aes(label = "SNP 2109 (Inconnu GWAS)"), 
+            vjust = -1, size = 3, fontface = "bold") +
+  
+  facet_grid(. ~ chrom_num, scales = "free_x", space = "free_x") +
+  scale_color_manual(values = c("Exclusif RF (LD indépendant)" = "#e31a1c")) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme_minimal() +
+  labs(
+    title = "Comparaison Génomique Miroir : FarmCPU vs RF (Rust)",
+    subtitle = paste("Divergence LD-EMD =", round(0.637, 3)),
+    x = "Position sur le chromosome (Mb)",
+    y = "Importance (Bas: GWAS | Haut: RF)",
+    color = ""
+  ) +
+  theme(legend.position = "bottom", axis.text.x = element_blank())
+```
+
 
 
 ```{r}

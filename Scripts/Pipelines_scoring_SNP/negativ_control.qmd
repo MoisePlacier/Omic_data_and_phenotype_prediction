@@ -3,6 +3,7 @@ title: "negative_control"
 format: html
 editor: visual
 ---
+
 ```{r}
 library(data.table)
 library(caret)
@@ -26,11 +27,7 @@ load(Pheno_FILE)
 pheno_all <- as.data.table(Phenotype) 
 ```
 
-
-
-
 # Negative control using a simulated null phenotype
-
 
 ```{r}
 set.seed(2026)
@@ -40,14 +37,11 @@ pheno_all[, pheno_null := rnorm(.N, mean = 0, sd = 1)]
 hist(pheno_all$pheno_null)
 ```
 
-
 # Kinship-aware negative control
 
 On décompose la matrice de kinship (SVD). On génère un signal aléatoire sur chacun de ces axes, proportionnel à son importance, puis on les recombine pour obtenir un phénotype simulé dont la similarité entre individus reflète exactement la structure génétique globale. Un bruit individuel est ensuite ajouté.
 
 Le phénotype pour un individu est donc la somme, sur tous les axes génétiques, de (position génétique de l’individu sur l’axe) × (effet aléatoire de cet axe), plus un bruit individuel.
-
-
 
 ```{r}
 Kinship_FILE <- "../data/Kinship_Poplar.rda"
@@ -67,8 +61,8 @@ set.seed(2010)
 z <- rnorm(length(lambda), sd=1)  # coefficient aléatoire par composante
 g <- U %*% (sqrt(lambda) * z) # Pour chaque individu : somme des loadings individuels multipliés par un effet aléatoire par composante, pondéré par la racine de l’inertie de la composante
 ```
-la covariance de $g$ est exactement $K$.
-$$ \mathbf{g} \sim \mathcal{N}(\mathbf{0}, \mathbf{K}) $$
+
+la covariance de $g$ est exactement $K$. $$ \mathbf{g} \sim \mathcal{N}(\mathbf{0}, \mathbf{K}) $$
 
 ```{r}
 ### Ajout d'un bruit sur les individus
@@ -77,6 +71,7 @@ var_g <- var(as.numeric(g))
 var_g
 h2_target <- 0.5   # Le bruit représente 50 % de variance populationnelle cf R^2 des modèles lm(phenos ~ pop)
 ```
+
 $$ h^2 = \frac{\sigma_g^2}{\sigma_g^2 + \sigma_e^2} \qquad <=> \qquad\sigma_e^2 = \sigma_g^2 \frac{1 - h^2}{h^2} $$
 
 ```{r}
@@ -85,7 +80,6 @@ sigma_e  <- sqrt(sigma_e2)
 sigma_e
 ```
 
-
 ```{r}
 e <- rnorm(nrow(K), sd = sigma_e)
 
@@ -93,12 +87,19 @@ pheno_null_pop <- as.numeric(g + e)
 pheno_all[, pheno_kin_aware := pheno_null_pop]
 ```
 
-$$ \mathbf{y} = \mathbf{g} + \epsilon  \qquad et\qquad \mathbf{y} \sim \mathcal{N}\bigl(\mathbf{0}, \sigma_g^2 \mathbf{K} + \sigma_e^2 \mathbf{I}\bigr) $$
+$$ \mathbf{y} = \mathbf{g} + \epsilon  \qquad <=>\qquad \mathbf{y} \sim \mathcal{N}\bigl(\mathbf{0}, \sigma_g^2 \mathbf{K} + \sigma_e^2 \mathbf{I}\bigr) $$
 
 ```{r}
 hist(pheno_all$pheno_kin_aware)
 ```
+
 # Population-aware negative control
+
+Pour un individu $i$ appartenant à la population $j$, le phénotype simulé $Y_{ij}$ est modélisé selon l'équation suivante :
+
+$$Y_{ij} = \beta_{j} + \epsilon_{ij}$$
+
+$\beta_{j} \sim \mathcal{N}(0, \sigma_{pop}^2)$ $\epsilon_{ij} \sim \mathcal{N}(0, \sigma_{e}^2)$
 
 ```{r}
 Loc_FILE <- "../data/localisation.rda"
@@ -126,19 +127,59 @@ names(pop_effects) <- unique_pop
 pheno_all[, pheno_pop_aware := pop_effects[merged$Population] + rnorm(.N, sd = sigma_e)]
 
 hist(pheno_all$pheno_pop_aware)
+plot_df <- data.frame(
+  Population = merged$Population,
+  Pheno = pheno_all$pheno_pop_aware
+)
+
+# Génération du Boxplot
+ggplot(plot_df, aes(x = Population, y = Pheno, fill = Population)) +
+  geom_boxplot(alpha = 0.7, outlier.color = "red") +
+  geom_jitter(width = 0.2, alpha = 0.3) + # Ajout des points individuels pour voir la distribution
+  theme_minimal() +
+  labs(
+    title = "Distribution du Phénotype simulé par Population",
+    subtitle = expression(paste("Modèle : ", Y[ij] == beta[j] + epsilon[ij], " (Contrôle Négatif)")),
+    x = "Origine Géographique (Population)",
+    y = "Valeur du Phénotype simulé"
+  ) +
+  theme(legend.position = "none")
 ```
 
 # Pheno déflatés de Kinship et genomic
 
 Pour obtenir des résidus phénotypiques totalement déflatés de la structure génétique, nous avons opté pour une approche hybride : l'utilisation de variables de population et des premières composantes principales (PCs) en effets fixes pour capturer la structure de population globale, complétée par l'inclusion de la matrice de parenté (Kinship) en effet aléatoire pour modéliser l'apparentement plus fin. Cette double correction assure que les résidus fournis à la Random Forest sont exempts de tout signal de structure familiale ou géographique.
 
+### Étapes de génération du phénotype déflaté
+
+-   **Décomposition de la matrice de parenté (Kinship) :** Nous effectuons une décomposition en valeurs propres (EVD) de la matrice $K$ pour obtenir les vecteurs propres utilisés comme composantes principales (PCs). Ces dernières capturent les axes majeurs de la structure génétique :
+
+    $$K = U \Lambda U^T$$
+
+    Où $U$ contient les vecteurs propres et $\Lambda$ les valeurs propres associés.
+
+-   **Intégration des covariables fixes :** Nous sélectionnons les trois premières composantes principales ($PC_1, PC_2, PC_3$) ainsi que l'origine géographique (*Population*) comme effets fixes pour corriger la structure de population globale.
+
+-   **Spécification du modèle linéaire mixte (LMM) :** Pour chaque trait phénotypique, nous ajustons un modèle de type **G-BLUP** (Genomic Best Linear Unbiased Prediction) via l'algorithme `mmer` du package `sommer` : $$y = X\beta + Zu + \epsilon$$
+
+    Où :
+
+    -   $X\beta$ représente les **effets fixes** (Population + 3 PCs).
+    -   $Zu$ représente l'**effet aléatoire polygénique**, avec $u \sim \mathcal{N}(0, K\sigma_g^2)$.
+    -   $\epsilon$ est l'**erreur résiduelle**, avec $\epsilon \sim \mathcal{N}(0, I\sigma_e^2)$.’
+
+-   **Extraction de la "Matière Noire" (Résidus) :** L'objectif est de récupérer les résidus $\hat{e}$, qui représentent la part de la variation phénotypique non captée par l'additivité et la structure : ’$$\hat{e} = y - (X\hat{\beta} + Z\hat{u})$$
+
+-   **Standardisation et Sauvegarde :** Les résidus sont extraits pour l'ensemble des phénotypes (traits réels et contrôles négatifs). Ils servent de variable cible ($Y$) pour le bras non linéaire (Random Forest).
 
 ```{r}
 Genomic_FILE <- "../data/Genomic.rda"
 load(Genomic_FILE)
 geno <- as.data.table(Genomic)
+```
 
 
+```{r}
 Kinship_FILE <- "../data/Kinship_Poplar.rda"
 load(Kinship_FILE)
 K <- as.data.table(Kinship_Poplar)
@@ -148,13 +189,11 @@ load(Loc_FILE)
 loc_df<- as.data.table(localisation)
 
 
-Pheno_FILE <- "../data/Phenotype.rda"
-load(Pheno_FILE)
-pheno_all <- as.data.table(Phenotype) 
+Pheno_FILE <- "../data/pheno_null.rds"
+
+pheno_all<- as.data.table(readRDS(Pheno_FILE))
 pheno_all[, ID := rownames(Genomic)]
 ```
-
-
 
 ## SVD matrice Kinship
 
@@ -163,8 +202,6 @@ eig <- eigen(K, symmetric = TRUE)
 U <- eig$vectors           
 lambda <- eig$values       
 ```
-
-
 
 ```{r}
 library(sommer)
@@ -175,8 +212,6 @@ pcs_dt <- as.data.table(U[, 1:5])
 colnames(pcs_dt) <- paste0("PC", 1:5)
 pcs_dt[, ID := pheno_all$ID]
 ```
-
-
 
 ```{r}
 df_mixed <- merge(pheno_all, loc_df[, .(ID, Population)], by = "ID")
@@ -218,25 +253,22 @@ Y_mixed_residuals$ID <- df_mixed$ID
 # Sauvegarde
 saveRDS(Y_mixed_residuals, "../data/LMM_Residuals_Kinship_Pop.rds")
 ```
+
 ```{r}
 Y_mixed_residuals
 ```
+
 ```{r}
 Y_mixed_residuals_merged <- merge(Y_mixed_residuals, loc_df[, .(ID, Population)], by = "ID")
 ```
 
-
 ## Save
-
 
 ```{r}
 saveRDS(pheno_all, file = "../data/pheno_null.rds")
 ```
 
-
-
-
-# Petit Contrôle avec un LM ! 
+# Petit Contrôle avec un LM !
 
 ## import des datas
 
@@ -246,13 +278,12 @@ load(Genomic_FILE)
 geno <- as.data.table(Genomic)
 ```
 
-
 ```{r}
 Loc_FILE <- "../data/localisation.rda"
 load(Loc_FILE)
 loc_df<- as.data.table(localisation)
 
-Pheno_FILE <- "../data/pheno_null.rds"
+Pheno_FILE <- "../data/LMM_Residuals_Kinship_Pop.rds"
 
 pheno<- as.data.table(readRDS(Pheno_FILE))
 
@@ -262,9 +293,13 @@ geno[, ID := rownames(Genomic)]
 pheno[, ID := rownames(Genomic)]
 ```
 
+```{r}
+pheno
+```
+
 
 ```{r}
-merged<- merge(Y_mixed_residuals_merged, loc_df[,list(Population,ID)], by = "ID")
+merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
 
 ```
 
@@ -272,13 +307,11 @@ merged<- merge(Y_mixed_residuals_merged, loc_df[,list(Population,ID)], by = "ID"
 merged$Population <- merged$Population.x
 ```
 
-
 ```{r}
-ggplot(merged, aes(x=Population, y = pheno_pop_aware)) +
+ggplot(merged, aes(x=Population, y = CIRC2009)) +
          geom_boxplot()
 merged
 ```
-
 
 ## LM (Pheno \~ population )
 
@@ -302,10 +335,9 @@ ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
   geom_point(size = 3) +
   geom_segment(aes(x = phenotype, xend = phenotype, y = 0, yend = r2)) +
   coord_flip() +
-  ylab("R² lm(Phénotype ~ Population)") +
+  ylab("R² lm(Phénotype déflaté ~ Population)") +
   xlab("Caractère phénotypique") +
   theme_minimal()
 ```
 
-Mince ! Lorsque l'on créé un phénotype avec 50% de variance expliquée par la kinship, le modèle simple LM (phéno kinship ~ Population) à un R^2 très faible (0.1)... Cela signifie que la corrélation entre les catégories Population et Kinship sont plutot faible finalement ...
-
+Mince ! Lorsque l'on créé un phénotype avec 50% de variance expliquée par la kinship, le modèle simple LM (phéno kinship \~ Population) à un R\^2 très faible (0.1)... Cela signifie que la corrélation entre les catégories Population et Kinship sont plutot faible finalement ...
