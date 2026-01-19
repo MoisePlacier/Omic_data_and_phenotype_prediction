@@ -1,0 +1,630 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
+%
+\documentclass[
+  11pt,
+  letterpaper,
+  DIV=11,
+  numbers=noendperiod]{scrartcl}
+
+\usepackage{amsmath,amssymb}
+\usepackage{setspace}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else  
+    % xetex/luatex font selection
+  \setmainfont[]{Times New Roman}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=2cm]{geometry}
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\setcounter{secnumdepth}{5}
+% Make \paragraph and \subparagraph free-standing
+\ifx\paragraph\undefined\else
+  \let\oldparagraph\paragraph
+  \renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+  \let\oldsubparagraph\subparagraph
+  \renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+\KOMAoption{captions}{tableheading}
+\usepackage[colorlinks=true, linkcolor=blue]{hyperref}
+\usepackage[acronym]{glossaries}
+\makeglossaries
+\DeclareUnicodeCharacter{221E}{$\infty$}
+\DeclareUnicodeCharacter{2192}{$\to$}
+\DeclareUnicodeCharacter{00B0}{$^\circ$}
+\DeclareUnicodeCharacter{03B1}{$\alpha$}
+\DeclareUnicodeCharacter{03B2}{$\beta$}
+\usepackage[backend=biber, style=authoryear, citestyle=authoryear, url=true, urldate=long]{biblatex}
+\setlength{\bibitemsep}{1em}
+\addbibresource{bibliographie_peuplier.bib}
+\makeatletter
+\makeatother
+\makeatletter
+\makeatother
+\makeatletter
+\@ifpackageloaded{caption}{}{\usepackage{caption}}
+\AtBeginDocument{%
+\ifdefined\contentsname
+  \renewcommand*\contentsname{Table des matières}
+\else
+  \newcommand\contentsname{Table des matières}
+\fi
+\ifdefined\listfigurename
+  \renewcommand*\listfigurename{Liste des Figures}
+\else
+  \newcommand\listfigurename{Liste des Figures}
+\fi
+\ifdefined\listtablename
+  \renewcommand*\listtablename{Liste des Tables}
+\else
+  \newcommand\listtablename{Liste des Tables}
+\fi
+\ifdefined\figurename
+  \renewcommand*\figurename{Figure}
+\else
+  \newcommand\figurename{Figure}
+\fi
+\ifdefined\tablename
+  \renewcommand*\tablename{Table}
+\else
+  \newcommand\tablename{Table}
+\fi
+}
+\@ifpackageloaded{float}{}{\usepackage{float}}
+\floatstyle{ruled}
+\@ifundefined{c@chapter}{\newfloat{codelisting}{h}{lop}}{\newfloat{codelisting}{h}{lop}[chapter]}
+\floatname{codelisting}{Listing}
+\newcommand*\listoflistings{\listof{codelisting}{Liste des Listings}}
+\makeatother
+\makeatletter
+\@ifpackageloaded{caption}{}{\usepackage{caption}}
+\@ifpackageloaded{subcaption}{}{\usepackage{subcaption}}
+\makeatother
+\makeatletter
+\@ifpackageloaded{tcolorbox}{}{\usepackage[skins,breakable]{tcolorbox}}
+\makeatother
+\makeatletter
+\@ifundefined{shadecolor}{\definecolor{shadecolor}{rgb}{.97, .97, .97}}
+\makeatother
+\makeatletter
+\makeatother
+\makeatletter
+\makeatother
+\ifLuaTeX
+\usepackage[bidi=basic]{babel}
+\else
+\usepackage[bidi=default]{babel}
+\fi
+\babelprovide[main,import]{french}
+% get rid of language-specific shorthands (see #6817):
+\let\LanguageShortHands\languageshorthands
+\def\languageshorthands#1{}
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same} % disable monospaced font for URLs
+\hypersetup{
+  pdftitle={Rapport},
+  pdflang={fr},
+  colorlinks=true,
+  linkcolor={blue},
+  filecolor={Maroon},
+  citecolor={Blue},
+  urlcolor={Blue},
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Rapport}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\ifdefined\Shaded\renewenvironment{Shaded}{\begin{tcolorbox}[frame hidden, breakable, boxrule=0pt, sharp corners, interior hidden, borderline west={3pt}{0pt}{shadecolor}, enhanced]}{\end{tcolorbox}}\fi
+
+\renewcommand*\contentsname{Table des Matières}
+{
+\hypersetup{linkcolor=}
+\setcounter{tocdepth}{3}
+\tableofcontents
+}
+\setstretch{1.2}
+\hypertarget{introduction-et-contexte-scientifique}{%
+\section{Introduction et Contexte
+Scientifique}\label{introduction-et-contexte-scientifique}}
+
+Notre travail a été réalisé avec l'unité
+\href{https://biofora.val-de-loire.hub.inrae.fr/}{BioForA} (Biologie
+intégrée pour la valorisation de la diversité des arbres et de la forêt)
+du centre INRAE Val de Loire. Il prend place dans la continuité directe
+des travaux de thèse menés par Alexandre Duplan, sous l'encadrement de
+Harold Duruflé et Leopoldo Sanchez-Rodriguez. Le projet vise à
+comprendre les mécanismes d'adaptation des arbres forestiers,
+spécifiquement le peuplier noir (Populus nigra), face aux changements
+environnementaux.
+
+Pour ce faire, nous exploitons des données multi-omiques (génomique,
+épigénomique, transcriptomique) issues des projets
+\href{https://anr.fr/Projet-ANR-13-JSV6-0001}{ANR SYBIOPOP} et
+\href{https://epitree-project.hub.inrae.fr/}{EPITREE}. L'objectif de
+notre travail est de construire des modèles capables de prédire des
+traits phénotypiques complexes (croissance, phénologie, résistance aux
+maladies) à partir des données génomiques.
+
+\hypertarget{lhuxe9ritage-muxe9thodologique}{%
+\subsection{L'héritage
+méthodologique}\label{lhuxe9ritage-muxe9thodologique}}
+
+Les travaux antérieurs au sein de l'unité ont permis de constituer et de
+traiter une base de données conséquente regroupant 199 individus de
+peupliers noirs génotypés et phénotypés. Alexandre Duplan à développé,
+entre autres, plusieurs approches de modélisations pour prédire les
+phénotypes à partir des données multi-omiques. Il base son approche sur
+une concaténation des différentes couches omiques à partir de laquel il
+applique différents modèles de prédictions comme la régression Ridge ou
+le random Forest. Le choix d'intégration précoces des différentes
+couches omiques par concaténation est motivé par le fait que cela permet
+d'avoir une vue unifiée du système système biologique. Cependant, la
+concaténation
+
+Dans une optique de réduction de dimension et d'identification des
+régions génomiques clés, une stratégie de pré-filtrage a été
+initialement adoptée. Elle reposait sur l'utilisation de modèles mixtes
+multi-locus (MLMM), une approche classique de type GWAS (Genome-Wide
+Association Study). L'hypothèse sous-jacente était que la sélection des
+marqueurs présentant les associations statistiques les plus fortes avec
+le phénotype permettrait de maximiser la précision prédictive tout en
+réduisant le bruit.
+
+\hypertarget{le-paradoxe-de-la-suxe9lection-gwas-vs-suxe9lection-aluxe9atoire}{%
+\subsection{Le paradoxe de la sélection : GWAS vs Sélection
+Aléatoire}\label{le-paradoxe-de-la-suxe9lection-gwas-vs-suxe9lection-aluxe9atoire}}
+
+Les analyses comparatives menées ont révélé un résultat contre-intuitif
+majeur : la performance prédictive (\(R^2\)) obtenue à partir d'un
+sous-ensemble de marqueurs sélectionnés aléatoirement s'avère
+équivalente à celle obtenue via une sélection ciblée par MLMM/GWAS. Ce
+phénomène suggère que l'approche GWAS classique, en se focalisant
+exclusivement sur les signaux additifs les plus robustes, échoue à
+capturer la complexité du paysage génétique nécessaire à une prédiction
+précise. Ce constat nous impose de repenser la sélection de variables
+non plus comme un simple filtrage statistique, mais comme une recherche
+de signaux complémentaires.
+
+\hypertarget{objectifs-scientifiques}{%
+\subsection{Objectifs Scientifiques}\label{objectifs-scientifiques}}
+
+À la demande de Harold Duruflé, ce projet explore des alternatives non
+linéaires pour pallier les limites des approches linéaire dans la
+prédiction de phénotypes complexes. Nous avons pris le parti
+méthodologique d'intégrer cette non-linéarité dès l'étape de sélection
+des variables (scoring), plutôt que de l'utiliser uniquement comme outil
+de prédiction final. Cette stratégie répond à une double ambition :
+
+\hypertarget{identification-de-larchitecture-uxe9pistatique-et-gain-en-explicabilituxe9}{%
+\subsubsection{Identification de l'architecture épistatique et gain en
+explicabilité}\label{identification-de-larchitecture-uxe9pistatique-et-gain-en-explicabilituxe9}}
+
+Le premier objectif est d'identifier des interactions complexes (gène x
+gène) qui constituent une part importante de l'héritabilité manquante.
+En utilisant des algorithmes capables de capter des dépendances non
+linéaires, nous cherchons à découvrir des effets épistatiques à
+l'échelle des SNPs afin de faciliter l'interprétation
+biologique.(\protect\hyperlink{ref-papier1}{\textbf{papier1?}})
+
+\hypertarget{raffinement-de-la-suxe9lection-pour-une-meilleur-pruxe9diction}{%
+\subsubsection{Raffinement de la sélection pour une meilleur
+prédiction}\label{raffinement-de-la-suxe9lection-pour-une-meilleur-pruxe9diction}}
+
+Le second objectif vise à aboutir à une sélection de marqueurs plus fine
+et plus robuste. En confrontant les signaux issus de méthodes linéaires
+(GWAS) et d'approches non linéaires de scoring des SNP (interactions),
+nous espérons d'un part : filtrer le bruit de fond et ne conserver que
+les variants porteurs d'une information unique ou synergique. D'autre
+part : maximiser la variance expliquée en combinant des sources de
+signaux complémentaires pour construire un modèle de prédiction plus
+performant que ceux basées sur une sélection aléatoire ou strictement
+GWAS de SNP.
+
+\hypertarget{enjeux-et-architecture-de-lapproche-en-deux-bras}{%
+\section{Enjeux et Architecture de l'Approche en ``Deux
+Bras''}\label{enjeux-et-architecture-de-lapproche-en-deux-bras}}
+
+La prédiction de phénotypes complexes se heurte à deux obstacles majeurs
+: la structure de population hautement hiérarchisée chez le peuplier
+noir (\emph{Populus nigra}) et l'existence à priori d'interactions non
+linéaires (épistasie). Pour répondre à ces défis, nous avons développé
+une approche de \textbf{``Double Tamisage''} combinant des modèles
+linéaires mixtes et la flexibilité du machine learning.
+
+\hypertarget{le-bras-linuxe9aire}{%
+\subsubsection{Le Bras Linéaire}\label{le-bras-linuxe9aire}}
+
+L'objectif est d'identifier les effets additifs principaux, considérés
+comme les ``piliers'' de l'architecture génétique du caractère.
+
+\textbf{Outils}: MLM (Mixed Linear Model) et FarmCPU (Fixed and Adaptive
+Model for Mixed Probability).
+
+\textbf{Principe}: Ces modèles reposent sur l'hypothèse de l'additivité,
+où chaque variant contribue de manière indépendante et linéaire à la
+valeur phénotypique. Si le MLM s'inscrit dans une vision infinitésimale
+(multiplicité de petits effets), FarmCPU utilise une stratégie itérative
+pour mieux isoler les QTLs majeurs tout en contrôlant la structure de
+population.
+
+\textbf{Sélection}: Extraction du Top K SNPs basée sur la
+significativité statistique (\(p\text{-value}\)). Ce ``tamisage''
+privilégie les marqueurs présentant un signal robuste et stable sur
+l'ensemble de la population étudiée.
+
+\hypertarget{le-bras-non-linuxe9aire-rangerrf-sur-ruxe9sidus}{%
+\subsubsection{Le Bras Non-Linéaire (Ranger/RF sur
+résidus)}\label{le-bras-non-linuxe9aire-rangerrf-sur-ruxe9sidus}}
+
+Ce bras vise à capturer les effets fins, les interactions gène x gène
+(épistasie) et les effets à seuil que le modèle linéaire échoue à
+détecter.
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Outils :} Forêt aléatoire (\texttt{ranger}) avec mesure
+  d'importance corrigée.
+\item
+  \textbf{Principe :} En travaillant sur les \textbf{résidus} du modèle
+  nul, on force l'algorithme à faire abstraction de la structure de
+  population et de l'apparentement moyen pour se concentrer sur les
+  ``exceptions à la règle'' (déviations phénotypiques inexpliquées par
+  la génétique additive).
+\item
+  \textbf{Stratégie de ``Feature Subspacing'' :} Pour pallier le
+  problème de la haute dimension (\(p = 210\,000\) pour \(n = 199\)),
+  nous avons mis en place un protocole d'échantillonnage itératif : 870
+  tirages avec remise de sous-ensembles de 5 000 SNPs.
+\end{itemize}
+
+\hypertarget{avantages-muxe9thodologiques-du-sous-uxe9chantillonnage-de-snps}{%
+\subsubsection{Avantages méthodologiques du sous-échantillonnage de SNPs
+:}\label{avantages-muxe9thodologiques-du-sous-uxe9chantillonnage-de-snps}}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\item
+  \textbf{Stabilisation du score d'importance :} Chaque SNP est
+  sélectionné en moyenne 20 fois dans des contextes génomiques
+  (voisinages de tirage) différents. Le score final d'importance est une
+  moyenne pondérée de ces itérations, ce qui permet de lisser le ``biais
+  de contexte'' et de stabiliser l'importance statistique de chaque
+  marqueur : \[E[Imp] = \frac{1}{N} \sum_{i=1}^{N} Imp_{i}\] où
+  \(N \approx 20\) est le nombre de répétitions par SNP.
+\item
+  \textbf{Équité statistique et couverture exhaustive :} Avec 210 000
+  SNPs, une forêt aléatoire globale nécessiterait un nombre d'arbres
+  démesuré pour garantir que chaque variable soit testée de manière
+  significative. Notre approche garantit mathématiquement une couverture
+  totale du génome. Chaque SNP passe un ``examen'' répété, assurant
+  qu'aucun variant d'intérêt ne reste dans l'angle mort du modèle par
+  simple malchance au tirage.
+\item
+  \textbf{Réduction des biais de sélection et robustesse du scoring}
+\end{enumerate}
+
+Inspirée par les travaux de \textbf{Strobl et al.~(2007)}, cette
+approche par sous-échantillonnage de variables (Feature Subspacing)
+limite les biais de sélection inhérents aux algorithmes d'arbres de
+décision en haute dimension. Elle transforme la forêt aléatoire d'un
+outil de prédiction ``boîte noire'' en un outil de scoring génomique
+grâce à plusieurs mécanismes :
+
+\begin{itemize}
+\item
+  \textbf{Neutralisation du biais de catégorie par l'homogénéité
+  d'échelle :} L'un des biais majeurs identifiés par Strobl est la
+  tendance des forêts aléatoires à favoriser les variables offrant le
+  plus grand nombre de points de coupure (split points). Dans notre
+  étude, tous les SNPs sont codés de manière identique (\(0, 1, 2\)).
+  Cette homogénéité garantit qu'aucun marqueur n'est favorisé par sa
+  structure mathématique ; seule sa capacité intrinsèque à expliquer la
+  variance du résidu phénotypique détermine son score.
+\item
+  \textbf{Décomposition du Déséquilibre de Liaison (LD) par le
+  sub-sampling :} En génétique, la corrélation entre SNPs voisins (LD)
+  crée une compétition où un ``leader'' statistique peut masquer
+  l'importance de ses voisins. En ne présentant que \textasciitilde2\%
+  du génome (5 000 SNPs) à chaque tirage, nous réduisons drastiquement
+  la probabilité que plusieurs SNPs d'un même bloc de LD soient en
+  compétition directe. Cela permet de ``casser'' temporairement ces
+  corrélations et d'attribuer un score à chaque SNP de la région
+  causale, plutôt que d'écraser les scores des voisins.
+\item
+  \textbf{Stabilité statistique par l'espérance d'importance :} La
+  répétition de l'expérience sur 870 itérations permet de passer d'une
+  mesure ponctuelle et potentiellement instable à une \textbf{espérance
+  mathématique d'importance} (\(E[Imp]\)). Avec chaque SNP testé en
+  moyenne 20 fois dans des voisinages génomiques aléatoires différents,
+  le score final est stabilisé et reflète la contribution robuste du
+  marqueur :
+\end{itemize}
+
+\[E[Imp] \approx \frac{1}{N} \sum_{i=1}^{N} Score_{i}\]
+
+où \(N\) est le nombre de tirages incluant le SNP. Cette convergence
+statistique assure que le ``Top K'' final est constitué de variables
+ayant prouvé leur importance de manière répétée et équitable,
+garantissant la fiabilité biologique de la sélection.
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Sélection :} Extraction du Top K SNPs par score d'importance
+  moyen.
+\end{itemize}
+
+\hypertarget{duxe9flation-phuxe9notypique-et-gestion-de-la-structure}{%
+\section{Déflation Phénotypique et Gestion de la
+Structure}\label{duxe9flation-phuxe9notypique-et-gestion-de-la-structure}}
+
+Pour isoler le signal épistatique du signal polygénique de fond, nous
+utilisons un modèle linéaire mixte (LMM) pour déflater le phénotype.
+
+\hypertarget{distinction-entre-kinship-et-pcs}{%
+\subsubsection{Distinction entre Kinship et
+PCs}\label{distinction-entre-kinship-et-pcs}}
+
+Dans notre modèle, nous utilisons deux niveaux de correction : -
+\textbf{La Kinship (effet aléatoire) :} Elle modélise la variance liée à
+l'apparentement ``fin'' (cousins, frères). Elle traite les individus
+comme issus d'une distribution continue. - \textbf{Les Composantes
+Principales (PCs - effets fixes) :} Elles agissent comme des
+``interrupteurs'' puissants retirant les différences massives entre
+grandes populations géographiques.
+
+\hypertarget{justification-de-la-correction-hybride}{%
+\subsubsection{Justification de la correction
+hybride}\label{justification-de-la-correction-hybride}}
+
+L'utilisation conjointe des PCs (ici les 3 premières) et de la Kinship
+garantit que : 1. Le ``gros'' de la structure (histoire évolutive et
+géographie) est évacué mathématiquement. 2. La Kinship affine la
+correction pour la proximité familiale.
+
+\hypertarget{pourquoi-lapproche-sur-ruxe9sidus-est-elle-le-meilleur-des-deux-mondes}{%
+\section{Pourquoi l'approche sur résidus est-elle ``le meilleur des deux
+mondes''
+?}\label{pourquoi-lapproche-sur-ruxe9sidus-est-elle-le-meilleur-des-deux-mondes}}
+
+Le MLM classique ``lisse'' la génétique pour éviter les faux positifs en
+ajustant les \(p-values\) selon la ressemblance familiale. Cependant, il
+suppose que les effets s'additionnent simplement (\(1+1=2\)) et reste
+``aveugle'' à l'épistasie (où l'effet du SNP A dépend du SNP B).
+
+\hypertarget{chercher-les-exceptions-uxe0-la-ruxe8gle}{%
+\subsubsection{Chercher les exceptions à la
+règle}\label{chercher-les-exceptions-uxe0-la-ruxe8gle}}
+
+En fournissant les résidus au Random Forest, on lui transmet la part du
+phénotype que la parenté n'a pas pu expliquer. Si un individu est
+beaucoup plus performant que ce que sa ``famille'' laisse prévoir, la RF
+cherchera les combinaisons uniques de SNPs (chemins décisionnels)
+expliquant ce gain.
+
+\hypertarget{le-double-tamisage}{%
+\subsubsection{Le ``Double Tamisage''}\label{le-double-tamisage}}
+
+Cette méthode résout le problème de la colinéarité. Une RF sur phénotype
+brut ``redécouvrirait'' simplement la parenté. Sur résidus, chaque point
+d'importance apporte une \textbf{information à priori nouvelle}. -
+\textbf{Tamis 1 (LMM) :} Enlève la structure globale. - \textbf{Tamis 2
+(RF) :} Cherche les pépites (interactions) dans ce qui reste.
+
+\hypertarget{quantification-de-la-divergence-du-signal-une-preuve-par-le-transport-optimal}{%
+\section{Quantification de la Divergence du Signal : Une Preuve par le
+Transport
+Optimal}\label{quantification-de-la-divergence-du-signal-une-preuve-par-le-transport-optimal}}
+
+La mise en place de deux approches méthodologiques distinctes
+(\textbf{GWAS} vs \textbf{Random Forest sur résidus}) soulève une
+question fondamentale : ces méthodes capturent-elles la même information
+biologique via des marqueurs différents (redondance due au déséquilibre
+de liaison) ou explorent-elles des architectures génétiques réellement
+distinctes ?
+
+Pour répondre à cette interrogation, nous avons déployé une stratégie de
+comparaison métrique.
+
+\hypertarget{divergence-des-listes-de-candidats-ari}{%
+\subsection{Divergence des listes de candidats
+(ARI)}\label{divergence-des-listes-de-candidats-ari}}
+
+Dans un premier temps, nous avons évalué le chevauchement des ``Top
+SNPs'' sélectionnés par chaque méthode via l'\textbf{Adjusted Rand Index
+(ARI)}.
+
+Bien que classiquement utilisé pour le clustering, l'ARI permet ici de
+mesurer la similarité entre les listes de variants priorisés. Les
+résultats préliminaires indiquent un ARI proche de zéro entre les
+sélections \emph{FarmCPU} et \emph{Random Forest}, suggérant une
+divergence quasi totale des cibles moléculaires brutes.
+
+Cependant, en génétique des populations structurées, la distance
+physique ou l'identité stricte des marqueurs ne suffit pas. Deux SNPs
+différents peuvent porter la même information s'ils sont en fort
+\textbf{Déséquilibre de Liaison (LD)}.
+
+\hypertarget{learth-movers-distance-emd-dans-lespace-du-ld}{%
+\subsection{L'Earth Mover's Distance (EMD) dans l'espace du
+LD}\label{learth-movers-distance-emd-dans-lespace-du-ld}}
+
+Pour s'affranchir des biais de position et mesurer la véritable distance
+biologique entre les signaux, nous avons appliqué l'algorithme de
+l'\textbf{Earth Mover's Distance (EMD)}, ou distance de Wasserstein.
+
+Dans cette analyse, au lieu d'une distance physique en paires de bases,
+nous avons défini le coût de transport entre deux SNPs \(i\) et \(j\)
+comme fonction de leur corrélation génétique :
+
+\[Coût(i, j) = 1 - r^2_{ij}\]
+
+Nous avons normalisé les scores d'importance (RF) et les
+\(-\log_{10}(p\text{-values})\) (GWAS) pour qu'ils forment des
+distributions de probabilité (somme égale à 1). L'EMD mesure alors
+l'effort minimal pour transformer la ``carte d'importance'' du GWAS en
+celle de la Random Forest.
+
+\hypertarget{ruxe9sultats-et-interpruxe9tation}{%
+\subsubsection{Résultats et
+Interprétation}\label{ruxe9sultats-et-interpruxe9tation}}
+
+Les calculs d'EMD-LD révèlent une hiérarchie claire dans la divergence
+des signaux :
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{GWAS (FarmCPU) vs MLM classique :} \(EMD \approx 0.02\).
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \emph{Interprétation :} La distance est négligeable. Les deux
+    modèles linéaires identifient essentiellement les mêmes blocs
+    d'haplotypes. C'est notre contrôle négatif.
+  \end{itemize}
+\item
+  \textbf{GWAS (FarmCPU) vs Random Forest (sur Résidus) :}
+  \(EMD \approx 0.64\).
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \emph{Interprétation :} Ce score élevé indique une \textbf{rupture
+    haplotypique}. Pour retrouver le signal de la RF à partir du GWAS,
+    il faut ``transporter'' la masse d'importance vers des SNPs qui ne
+    partagent en moyenne que \textbf{36\%} de corrélation (\(1 - 0.64\))
+    avec les signaux linéaires.
+  \end{itemize}
+\end{itemize}
+
+Cela démontre que la Random Forest ne se contente pas de sélectionner
+des ``tags'' alternatifs pour les mêmes QTLs, mais identifie des régions
+génomiques indépendantes des découvertes du GWAS.
+
+\hypertarget{mise-en-uxe9vidence-de-la-matiuxe8re-noire-guxe9nomique}{%
+\subsection{Mise en évidence de la ``Matière Noire''
+Génomique}\label{mise-en-uxe9vidence-de-la-matiuxe8re-noire-guxe9nomique}}
+
+Cette divergence métrique s'incarne biologiquement dans l'identification
+de variants \textbf{``exclusifs''}. En croisant les scores d'importance
+avec les matrices de LD, nous avons isolé des SNPs présentant une
+importance prédictive majeure (Score \textgreater{} 2000) tout en étant
+totalement décorrélés des pics GWAS (\(r^2_{max} < 0.1\)).
+
+Ces résultats mettent en lumière une \textbf{``matière noire''
+génétique} : des locus essentiels pour la prédiction phénotypique mais
+invisibles pour l'inférence statistique classique.
+
+\hypertarget{limite-et-validation-conceptuelle}{%
+\subsubsection{Limite et Validation
+Conceptuelle}\label{limite-et-validation-conceptuelle}}
+
+Nous reconnaissons que la \(p\text{-value}\) (inférence de l'effet moyen
+additif) et le score d'importance (contribution à l'architecture
+prédictive globale) représentent des propriétés statistiques distinctes.
+
+Cependant, l'utilisation de l'EMD sur des distributions normalisées
+permet de s'affranchir des échelles de mesure pour se concentrer sur la
+\textbf{topographie de l'information}. La divergence observée (\(0.64\))
+valide l'hypothèse selon laquelle la supériorité prédictive de la Random
+Forest provient de l'exploitation de cette ``matière noire'' --- des
+interactions complexes et des effets non-linéaires que le modèle
+linéaire, par construction, ne peut percevoir.
+
+\hypertarget{moduxe8le-final-intuxe9gration-par-ruxe9gression-ridge}{%
+\section{Modèle Final : Intégration par Régression
+Ridge}\label{moduxe8le-final-intuxe9gration-par-ruxe9gression-ridge}}
+
+L'étape finale consiste à fusionner les découvertes des deux bras dans
+un modèle unique :
+
+\[Y \sim Ridge(SNP_{GWAS} + SNP_{RF})\]
+
+\hypertarget{feature-engineering-intelligent}{%
+\subsubsection{1. Feature Engineering
+Intelligent}\label{feature-engineering-intelligent}}
+
+Nous réalisons une intégration dirigée : - Nous forçons le modèle à
+considérer les SNPs linéairement importants (GWAS). - Nous injectons les
+SNPs porteurs d'information complexe (RF).
+
+\hypertarget{arbitrage-par-la-ridge}{%
+\subsubsection{2. Arbitrage par la Ridge}\label{arbitrage-par-la-ridge}}
+
+La Ridge Regression réalise l'arbitrage final grâce à sa pénalité
+\(L_2\). Contrairement à un XGBoost qui pourrait accorder une importance
+démesurée à une interaction par pur hasard statistique (bruit) sur un
+faible effectif (\(n=199\)), la Ridge stabilise les coefficients. Si une
+interaction trouvée par la RF n'est pas robuste, son coefficient sera
+réduit vers zéro, assurant ainsi la généralisation du modèle.
+
+
+
+\end{document}
