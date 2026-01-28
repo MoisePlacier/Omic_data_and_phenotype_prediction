@@ -181,7 +181,7 @@ nigra.}
 
 \begin{document}
 \maketitle
-\ifdefined\Shaded\renewenvironment{Shaded}{\begin{tcolorbox}[boxrule=0pt, enhanced, interior hidden, frame hidden, borderline west={3pt}{0pt}{shadecolor}, sharp corners, breakable]}{\end{tcolorbox}}\fi
+\ifdefined\Shaded\renewenvironment{Shaded}{\begin{tcolorbox}[frame hidden, enhanced, interior hidden, boxrule=0pt, borderline west={3pt}{0pt}{shadecolor}, breakable, sharp corners]}{\end{tcolorbox}}\fi
 
 \renewcommand*\contentsname{Table des Matières}
 {
@@ -266,32 +266,212 @@ génomique de même taille mais sélectionnés aléatoirement s'avère
 \subsection{Objectifs de l'étude et hypothèses de
 travail}\label{objectifs-de-luxe9tude-et-hypothuxe8ses-de-travail}}
 
-Les hypothèses que nous posons dans le cadre de ce travail cherchent a
-répondre simultanément à plusieurs objectifs :
+/ ici. je souhaite modifier l'approche point de départ = 1 constat :
+performances prédictives : Selection MLMM (initialement employé pour
+réduire les faux positifs et améliorer l'explicabilité des résultats) =
+selection aléatoire + Notre Objectif : améliorer les performances
+prédictives et améliorer l'explicabilité des modèles.
 
-1- Comprendre pourquoi la selection d'un subset aléatoire de taille
-identique au subset identifié par le MLMM permet d'obtenir des
-performances de prédictions similaires.
+Ce que l'on sait : population très structuré, la biblio dit : la
+précision d'un modèle génomique est une résultante composite de :
+L'apparentement global (Structure/Kinship). Le déséquilibre de liaison
+(LD) avec les marqueurs. Les effets spécifiques des QTLs (Loci de Traits
+Quantitatifs).
 
-2- Améliorer les performances de prédictions.
+=\textgreater{} Il y a une tension direct entre les l'objectif améliorer
+performance de prédictions et améliorer l'explicabilité des modèles(=
+identifier les variants causaux spécifiques des caractères).
 
-3- Améliorer l'explicabilité des modèles de prédictions.
+Les analyses antérieures présentaient une incohérence structurelle dans
+le traitement de l'information : la sélection des SNPs était effectuée
+via un modèle MLMM (corrigé pour la structure), tandis que l'évaluation
+des performances de prédiction s'appuyait sur le phénotype brut. il est
+impossible de déterminer si la performance prédictive observée (\(R^2\))
+provient de la pertinence biologique des marqueurs sélectionnés ou d'un
+simple effet de rappel de la structure de population.
 
-4- Réduire la dimensionnalité de l'espace des prédicteurs génétiques
-pour permettre une concaténation de données (data integration) efficace
-avec d'autres couches omiques (transcriptomique, métabolomique), sans
-saturer les modèles par le nombre de variables.
+Hypothèses sur les observations précédentes
 
-À la demande de Harold Duruflé, ce projet explore spécifiquement des
-alternatives non linéaires pour pallier les limites des approches
-linéaire dans la prédiction de phénotypes complexes. Nous avons pris le
-parti méthodologique d'intégrer cette non-linéarité dès l'étape de
-sélection des variables (scoring) via un Random Forest. Cette stratégie
-repose sur des hypothèses que nous chercherons a tester :
+Les bonnes performances obtenues avec de larges sous-ensembles
+aléatoires de SNPs s'expliqueraient principalement par la capacité de
+ces ensembles à capturer la structure de population et la parenté, qui
+constituent un proxy puissant du phénotype mesuré. Cette information,
+bien que prédictive, n'est pas directement informative sur les
+mécanismes biologiques sous-jacents.
 
-\hypertarget{compluxe9mentarituxe9-des-signaux-uxe9pistasie-vs-additivituxe9}{%
-\subsubsection{Complémentarité des signaux : Épistasie vs
-Additivité}\label{compluxe9mentarituxe9-des-signaux-uxe9pistasie-vs-additivituxe9}}
+Le plafonnement du \(R^2\) observé dans les analyses précédentes suggère
+que la sélection initiale de SNPs n'incluait pas l'ensemble des variants
+contribuant effectivement au phénotype, soit en raison d'un nombre de
+SNPs sélectionnés insuffisant, soit en raison de limites méthodologiques
+dans l'identification de leur importance.
+
+Nous faison donc le choix méthodologique de travailler sur les résidus
+déflatés des effets de structures car : 1) moins de faux négatifs sur
+les variants causaux identifiés Price et al.~(2006) et Yu et al.~(2006).
+2) L'utilisation des variants causaux pour la prédictions rends plus
+robuste car Selon Spiliopoulou et al.~(2015), dans un contexte de
+prédiction « across-cohort » (entre cohortes différentes ou populations
+non corrélées), les modèles « sparses » (parcimonieux) ciblant
+spécifiquement les variants causaux ont une meilleure capacité de
+généralisation.
+
+Hypothèses :
+
+Hypothèses de travail
+
+Chaque phénotype est supposé être déterminé par un nombre variable mais
+limité de régions fonctionnelles, reflétant la complexité biologique du
+trait.
+
+Une sélection de variables basée sur un protocole de Random Forest avec
+subsampling aléatoire et agrégation des scores d'importance permettrait
+d'identifier ces SNPs en capturant des effets non additifs et des
+interactions locales échappant aux modèles linéaires. Cette sélection
+devrait enrichir l'ensemble de SNPs en variants biologiquement
+pertinents, indépendamment de la structure de population. (Genome-wide
+prediction with non-additive models (González-Recio \& Forni, 2011))
+
+L'utilisation de cet ensemble restreint de SNPs dans des modèles de
+prédiction finale, qu'il s'agisse d'un modèle ridge ou d'un Random
+Forest, devrait permettre d'améliorer ou de maintenir les performances
+prédictives tout en augmentant la robustesse et l'interprétabilité
+biologique des résultats. Les différences de performances entre le ridge
+et le RF final fourniront en outre une indication sur le degré de
+non-linéarité et d'interactions résiduelles dans l'architecture
+génétique du trait.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Contexte et Héritage Méthodologique
+\end{enumerate}
+
+Les travaux antérieurs de l'unité ont permis la constitution d'un jeu de
+données de référence sur 199 individus de peuplier noir (Populus nigra).
+Sur cette base, les premières stratégies de prédiction génomique (A.
+Duplan) ont reposé sur une intégration précoce (early integration) des
+données multi-omiques, traitées par Ridge Regression ou Random Forest.
+Bien que cette approche unifiée permette de saisir le système biologique
+dans son ensemble, elle se heurte à une dimensionnalité excessive qui
+dilue le signal causal dans un bruit de fond massif.
+
+Pour tenter de réduire cette dimension, une présélection de variables
+par modèle mixte (MLMM/GWAS) a été testée. Cependant, les résultats ont
+révélé un ``paradoxe de la sélection'' : la performance prédictive
+obtenue via une sélection ciblée par GWAS s'avère équivalente à celle
+d'un sous-ensemble aléatoire de SNPs de même taille. Ce résultat suggère
+que les modèles actuels sont saturés par un signal global non spécifique
+au phénotype étudié.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{1}
+\tightlist
+\item
+  La Tension Méthodologique des travaux précédents
+\end{enumerate}
+
+Les analyses antérieures présentaient une incohérence structurelle dans
+le traitement de l'information : la sélection des SNPs était effectuée
+via un modèle MLMM (corrigé pour la structure), tandis que l'évaluation
+des performances de prédiction s'appuyait sur le phénotype brut.
+
+il est impossible de déterminer si la performance prédictive observée
+(\(R^2\)) provient de la pertinence biologique des marqueurs
+sélectionnés ou d'un simple effet de rappel de la structure de
+population. En effet, comme le soulignent Habier et al.~(2007) et
+Spiliopoulou et al.~(2017), la précision d'un modèle génomique est une
+résultante composite de :
+
+L'apparentement global (Structure/Kinship). Le déséquilibre de liaison
+(LD) avec les marqueurs. Les effets spécifiques des QTLs (Loci de Traits
+Quantitatifs).
+
+En prédisant sur le phénotype brut, la composante ``Apparentement''
+sature le signal, rendant invisible la contribution réelle des QTLs et
+expliquant pourquoi une sélection aléatoire (qui capture aussi
+l'apparentement) performe aussi bien qu'une sélection ciblée.
+
+Dans une population fortement structurée comme celle du peuplier noir,
+un grand nombre de SNPs aléatoires capture efficacement la composante
+``Apparentement'', agissant comme un proxy du phénotype sans pour autant
+identifier les mécanismes biologiques (Daetwyler et al., 2013). Cette
+prédiction par ``proximité génétique'' présente une limite majeure :
+elle masque le signal des régions fonctionnelles et empêche
+l'interprétabilité biologique. Pour dépasser ce plafond et isoler les
+variants causaux, il est impératif de neutraliser les effets de
+confusion liés à la démographie (Astle \& Balding, 2010). Conformément
+aux principes établis par Price et al.~(2006) et Yu et al.~(2006), la
+correction de la structure (via PCA ou modèles mixtes Q+K) est un
+prérequis pour distinguer les associations fortuites des véritables
+signaux biologiques.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{2}
+\tightlist
+\item
+  Objectifs de l'étude
+\end{enumerate}
+
+L'objectif central de cette étude est de passer d'une prédiction fondée
+sur la structure de population à une prédiction fondée sur
+l'architecture génétique du trait.Nous cherchons à identifier un
+ensemble restreint et pertinent (parsimonieux) de SNPs, localisés dans
+des régions fonctionnelles impliquées dans le déterminisme du trait,
+puis à exploiter cet ensemble pour la prédiction finale. Cette démarche
+vise deux buts conjoints :
+
+Améliorer ou maintenir la précision prédictive (\(R^2\)) en maximisant
+la composante liée aux effets de QTL spécifiques (LD-based prediction).
+
+Garantir l'interprétabilité biologique en s'assurant que les marqueurs
+sélectionnés pointent vers des régions régulatrices ou codantes
+causales, et non vers des artefacts de structure.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{3}
+\tightlist
+\item
+  Hypothèses de travailPour répondre à ces objectifs, nous formulons les
+  hypothèses suivantes :
+\end{enumerate}
+
+Hypothèse 1 : Spécificité fonctionnelle et architecture du trait
+
+Chaque phénotype est déterminé par un nombre variable mais limité de
+régions fonctionnelles (architecture oligogénique ou polygénique
+modérée). L'identification précise de ces zones, une fois le signal de
+structure déflaté, permet de capturer la variabilité phénotypique
+réelle, là où les approches globales sont saturées par le bruit de fond.
+
+Hypothèse 1bis : Influence de la colinéarité ``Adaptation-Structure''
+Nous supposons que l'impact de la déflation sur les performances de
+prédiction dépendra du degré de stratification adaptive du trait :
+
+\begin{itemize}
+\item
+  Pour les traits liés à l'adaptation locale (ex: phénologie), la
+  déflation devrait réduire le \(R^2\) car le signal biologique est
+  intrinsèquement colinéaire à la structure de population (Berg \& Coop,
+  2014).
+\item
+  Pour les traits moins structurés, la déflation devrait au contraire
+  augmenter les performances en supprimant le bruit de fond structural,
+  permettant ainsi aux modèles (notamment Random Forest) de se focaliser
+  sur le signal fonctionnel pur.
+\end{itemize}
+
+Hypothèse 2 : Supériorité de la sélection non-linéaire (Random Forest)
+
+Les modèles linéaires classiques (type MLMM) échouent à capturer une
+part de l'héritabilité due aux interactions complexes (épistasie). Une
+sélection de variables basée sur un protocole de Random Forest, via
+l'agrégation des scores d'importance, permet d'identifier des SNPs
+impliqués dans des effets non-additifs échappant aux GWAS standards
+(González-Recio \& Forni, 2011).
 
 Nous postulons que l'utilisation de la Random Forest (RF) permet
 d'identifier des interactions complexes (gène x gène) qui échappent aux
@@ -300,10 +480,6 @@ additive infinitésimale, le RF détecterait des dépendances non linéaires
 et des effets épistatiques. Nous supposons donc que ces deux méthodes ne
 voient pas le même signal génétique et que les deux méthodes ne sont pas
 redondantes mais complémentaires.
-
-\hypertarget{parsimonie-et-spuxe9cificituxe9-du-signal}{%
-\subsubsection{Parsimonie et Spécificité du
-signal}\label{parsimonie-et-spuxe9cificituxe9-du-signal}}
 
 Nous émettons l'hypothèse que le scoring par RF aboutit à une sélection
 de SNPs plus restreinte mais plus dense en information. En isolant les
@@ -319,29 +495,136 @@ liste de locus hautement spécifiques au caractère étudié, nous
 facilitons l'interprétation biologique grâce à l'identification de gènes
 candidats ou des voies métaboliques spécifiques.
 
-\hypertarget{gain-pruxe9dictif-par-hybridation}{%
-\subsubsection{Gain prédictif par
-hybridation}\label{gain-pruxe9dictif-par-hybridation}}
+Hypothèse 3 : Le gain par la parsimonie
 
-Enfin, nous chercherons à montrer que la combinaison de ces sources de
-signaux complémentaires permet de maximiser la variance expliquée. En
-confrontant les scores issus du GWAS (linéaire) et de la RF
-(interactions), nous espérons filtrer le bruit de fond pour ne conserver
-que les variants porteurs d'une information soit unique, soit
-synergique. L'objectif est de démontrer qu'un modèle hybride surpasse
-les modèles ``mono-méthode'' en termes de pouvoir prédictif (\(R^2\)).
+L'utilisation d'un subset de SNPs ``nettoyé'' de la structure et enrichi
+en signal fonctionnel permettra, dans les modèles de prédiction finale
+(Ridge ou RF), d'atteindre une robustesse supérieure. Si les
+performances du modèle Random Forest final dépassent celles du modèle
+Ridge sur ce subset sélectionné, cela confirmera l'existence d'une
+architecture génétique complexe (non-linéaire) que nous aurons réussi à
+capturer.
 
-Afin de confronter ces hypothèses à la réalité biologique, ce projet
-s'appuie sur l'étude d'une population de peupliers noirs (Populus
-nigra). Le peuplier est caractérisé par un génome très structuré par
-population et constitu donc un terrain d'étude idéal pour tester la
-robustesse du scoring par Random Forest face aux approches linéaires
-classiques.
+\hypertarget{ruxe9sultats}{%
+\subsection{Résultats :}\label{ruxe9sultats}}
 
-Le chapitre suivant détaille les ressources génomiques utilisées ainsi
-que le pipeline bio-informatique --- allant de la déflation des
-phénotypes par modèles mixtes à la construction de modèles de prédiction
-hybrides --- mis en œuvre pour valider notre approche.
+Résultats :
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi})}
+\tightlist
+\item
+  Pour les les traits très corréllés à la strucuture de la population
+  =\textgreater{} R\^{}2 diminue sur le phénotype déflaté : Pour les
+  selections aléatoires de subset de SNP =\textgreater{} le R\^{}2 tombe
+  à presque 0 !
+\end{enumerate}
+
+On vérifie l'hypothèses : A population genetic signal of polygenic
+adaptation (Berg \& Coop, 2014) / Convergent adaptation of human lactase
+persistence (Tishkoff et al., 2007) / Pour les traits liés à la
+structure, la déflation devrait réduire le \(R^2\) car le signal
+biologique est intrinsèquement colinéaire à la structure de population
+(Berg \& Coop, 2014)
+
+Par contre cool car les traits très peux corrélés a la pop : R\^{}2
+augmente considérablement !!! vérifie : - Pour les traits moins
+structurés, la déflation devrait au contraire augmenter les performances
+en supprimant le bruit de fond structural, permettant ainsi aux modèles
+de se focaliser sur le signal fonctionnel pur.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi})}
+\setcounter{enumi}{1}
+\tightlist
+\item
+  Egalement, Lorsque l'on compare les performances de prédictions sur le
+  phénotype Brut ou déflaté pour un même caractère : Lorsque le
+  caractère est peu lié a la population, le R\^{}2 reste sensiblment le
+  même Lorsque le caractère est très lié a la pop, Le R\^{}2 sur le
+  phéno Brut s'éffondre (pas à 0 mais -40\% quoi)
+\end{enumerate}
+
+confirme : A population genetic signal of polygenic adaptation (Berg \&
+Coop, 2014) / Convergent adaptation of human lactase persistence
+(Tishkoff et al., 2007). Les bonnes performances obtenues avec de larges
+sous-ensembles aléatoires de SNPs s'expliqueraient principalement par la
+capacité de ces ensembles à capturer la structure de population et la
+parenté, qui constituent un proxy puissant du phénotype mesuré.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi})}
+\setcounter{enumi}{2}
+\tightlist
+\item
+  Pour certains phénotypes très peu corréllés à la pop (anle insertion
+  des branches), on réussit a identifier un top 20-30 SNP qui a des
+  performances de prédictions énormes !
+\end{enumerate}
+
+Par contre, lorsque le trait est complex il faut un nombre bcp plus
+importants de SNP : entre 1000 et 5000 SNP !
+
+Beaux résultats !!!!
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi})}
+\setcounter{enumi}{3}
+\tightlist
+\item
+  Analyse divergence du signal capturé par les différentes méthodes pour
+  un phénotype :
+\end{enumerate}
+
+Résultats 1) : Le RF qui fait la selections de SNP sur le phéno pas
+déflaté =\textgreater{} performance prédictives nulles R\^{}2 diminue
+sur le phénotype déflaté. Il capture également des signaux
+transphénotypes (\% overlap top 100 SNP pour différents phénotype trés
+elevé) non spécifiques des phénotypes : surement très liés a la
+population !
+
+résultats 2) : De manière général, une selection par RF ou par LMM
+aboutit relativement aux même R\^{}2 ! Etonnant car : résultats 3) La
+selection de SNP par RF sur phéno déflaté ne capture pas dutoût le même
+signal que les méthodes linéaires !\\
+overlap du top 100 SNP pour un même phéno environ de 30\% + Extraction
+du Top 5000 SNPs pour chaque méthode (GWAS et RF) Calcul du Déséquilibre
+de Liaison (LD) entre tous les SNPs de cet ensemble
+
+=\textgreater{} Le coût de transport d\_ij n'est plus une distance
+physique, mais une distance de corrélation Une partie de l'importance
+identifiée par la Random Forest se situe sur des blocs d'haplotypes
+distincts de ceux identifiés par le GWAS.
+
+=\textgreater{} Un score de 0.42 signifie qu'en moyenne, il faut
+déplacer 40\% de la ``masse d'importance'' vers des haplotypes
+totalement non corrélés pour faire correspondre les deux méthodes.
+
+Ouverture possible : il serait génial d'investiguer par Gène Onthologie
+ou autre outils biostats : les QTL disjoints identifiés par chaque
+méthodes pour caractériser ce signal.
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi})}
+\setcounter{enumi}{4}
+\tightlist
+\item
+  identification d'un Traits adaptatifs et effets masqués par la
+  correction (snp du chromosome 13)
+\end{enumerate}
+
+effet transphénotypique (top SNP pour plusieurs caractère complexe)
+capturé par la méthode de RF sur phénotype brut. Fréquence allèlique
+montr très bien la corrélation avec une pop en particulier et absent
+chez les autres. Souligne les limites de l'approche Tishkoff et
+al.~(2007). Convergent adaptation of human lactase persistence. Nature
+Genetics. → Exemple canonique d'un variant fortement structuré,
+biologiquement causal mais confondu avec la population.
+
+Mathieson et McVean (2012). Differential confounding of GWAS by
+population stratification. PLoS Genetics. → Explique pourquoi la
+correction peut éliminer de vrais signaux biologiques liés à
+l'adaptation locale.
 
 \hypertarget{caractuxe9risation-des-ressources-guxe9nomiques-et-phuxe9notypiques}{%
 \section{Caractérisation des ressources génomiques et
@@ -384,6 +667,26 @@ Elle traite les individus comme issus d'une distribution continue. -
 retirant les différences massives entre grandes populations
 géographiques.
 
+formule de la kinship d'après Yang et al.~(2011) :
+
+\[K = \frac{ZZ^T}{N}\] avec Z la matrice centrée et réduite de la
+matrice de génotypes brute (\(0, 1, 2\)) :
+
+\[z_{ij} = \frac{x_{ij} - 2p_i}{\sqrt{2p_i(1 - p_i)}}\] avec
+\[p_i = \frac{\text{Nombre d'allèles de référence}}{2 \times \text{Nombre d'individus}}\]
+
+et le dénominateur : l'écart-type théorique sous l'équilibre de
+Hardy-Weinberg. \[\sqrt{2p_i(1 - p_i)}\]
+
+On utilise le facteur 2 car nos individus sont diploïdes. \(2p\)
+représente l'espérance du nombre d'allèles au locus \(i\)
+
+\[(ZZ^T)_{jk} = \sum_{i=1}^{N} z_{ij} \times z_{ik}\]
+
+\[(ZZ^T)_{jk} = \sum_{i=1}^{N} \frac{(x_{ij} - 2p_i)}{\sqrt{2p_i(1 - p_i)}} \times \frac{(x_{ik} - 2p_i)}{\sqrt{2p_i(1 - p_i)}}\]
+
+\[K_{jk} = \frac{1}{N} \sum_{i} \frac{(x_{ij} - 2p_i)(x_{ik} - 2p_i)}{2p_i(1 - p_i)}\]
+
 L'utilisation conjointe des PCs (ici les 3 premières) et de la Kinship
 garantit que : 1. Le ``gros'' de la structure (histoire évolutive et
 géographie) est évacué mathématiquement. 2. La Kinship affine la
@@ -403,13 +706,28 @@ expliquant ce gain.
 Le ``Double Tamisage'' Cette méthode résout le problème de la
 colinéarité. Une RF sur phénotype brut ``redécouvrirait'' simplement la
 parenté. Sur résidus, chaque point d'importance apporte une
-\textbf{information à priori nouvelle}. - \textbf{Tamis 1 (LMM) :}
-Enlève la structure globale. - \textbf{Tamis 2 (RF) :} Cherche les
-pépites (interactions) dans ce qui reste.
+\textbf{information à priori nouvelle}. - \textbf{(LMM) :} Enlève la
+structure globale. - \textbf{(RF) :} Cherche les pépites (interactions)
+dans ce qui reste.
 
 \hypertarget{extraction-et-validation-des-ruxe9sidus-phuxe9notypiques}{%
 \subsection{Extraction et validation des résidus
 phénotypiques}\label{extraction-et-validation-des-ruxe9sidus-phuxe9notypiques}}
+
+pour circ 2009 : Variance Génétique (\(\sigma^2_g\)) : u:ID = 0.079
+
+Variance Résiduelle (\(\sigma^2_e\)) : units = 0.234
+
+Héritabilité calculée :
+\(h^2 = \frac{0.079}{0.079 + 0.234} \approx \mathbf{0.25}\)
+
+pour angle insertion
+
+calcul de l'héritabilité (\(h^2\)) :
+
+\(\sigma^2_g\) (u:ID) : \(0.182\) \(\sigma^2_e\) (units) : \(0.198\)
+\(h^2\) : \(\frac{0.182}{0.182 + 0.198} = \mathbf{0.48}\) Zratio (1.07)
+montre que cette estimation reste incertaine statistiquement
 
 \hypertarget{analyse-comparative-des-muxe9thodes-de-scoring-des-snps}{%
 \section{Analyse comparative des méthodes de scoring des
@@ -469,6 +787,7 @@ détecter.
 
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
+\tightlist
 \item
   \textbf{Stabilisation du score d'importance :} Chaque SNP est
   sélectionné en moyenne 20 fois dans des contextes génomiques
@@ -477,17 +796,17 @@ détecter.
   de contexte'' et de stabiliser l'importance statistique de chaque
   marqueur : \[E[Imp] = \frac{1}{N} \sum_{i=1}^{N} Imp_{i}\] où
   \(N \approx 20\) est le nombre de répétitions par SNP.
-\item
-  \textbf{Équité statistique et couverture exhaustive :} Avec 210 000
-  SNPs, une forêt aléatoire globale nécessiterait un nombre d'arbres
-  démesuré pour garantir que chaque variable soit testée de manière
-  significative. Notre approche garantit mathématiquement une couverture
-  totale du génome. Chaque SNP passe un ``examen'' répété, assurant
-  qu'aucun variant d'intérêt ne reste dans l'angle mort du modèle par
-  simple malchance au tirage.
-\item
-  \textbf{Réduction des biais de sélection et robustesse du scoring}
 \end{enumerate}
+
+\textbf{Équité statistique et couverture exhaustive :} Avec 210 000
+SNPs, une forêt aléatoire globale nécessiterait un nombre d'arbres
+démesuré pour garantir que chaque variable soit testée de manière
+significative. Notre approche garantit mathématiquement une couverture
+totale du génome. Chaque SNP passe un ``examen'' répété, assurant
+qu'aucun variant d'intérêt ne reste dans l'angle mort du modèle par
+simple malchance au tirage.
+
+\textbf{Réduction des biais de sélection et robustesse du scoring}
 
 Inspirée par les travaux de \textbf{Strobl et al.~(2007)}, cette
 approche par sous-échantillonnage de variables (Feature Subspacing)

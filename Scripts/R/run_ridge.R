@@ -288,3 +288,76 @@ run_hybrid_pipeline <- function(
 
   return(rbindlist(res_hybrid))
 }
+
+
+
+
+
+
+
+################################################################################
+# FONCTION : run_elbow_pipeline (Version Répétée)
+# Itère sur K et répète la Cross-Validation pour stabiliser les boxplots
+################################################################################
+run_elbow_pipeline_ridge <- function(
+    topK_vector = c(10, 20, 50, 100, 200, 500, 1000, 2000),
+    all_scores_dt,
+    phenotypes,
+    methods,
+    contexts,
+    X_full,
+    y_full,
+    K_outer = 5,
+    K_inner = 5,
+    n_cv_repeats = 10,  # Nombre de fois qu'on refait la 5-fold CV
+    seed = 123,
+    n_random_repeats = 5
+) {
+  library(data.table)
+  all_elbow_results <- list()
+
+  for (k_val in topK_vector) {
+    message("\n--- Calcul pour K = ", k_val, " (", n_cv_repeats, " répétitions de CV) ---")
+
+    # Liste temporaire pour stocker les répétitions de ce palier K
+    list_reps_k <- list()
+
+    for (r in seq_len(n_cv_repeats)) {
+      # On décale le seed à chaque répétition pour que 'createFolds'
+      # à l'intérieur de run_ridge_nested_cv génère des splits différents.
+      current_seed <- seed + (r * 1000)
+
+      res_k_rep <- run_ridge_from_scores(
+        all_scores_dt = all_scores_dt,
+        phenotypes = phenotypes,
+        methods = methods,
+        contexts = contexts,
+        topK = k_val,
+        X_full = X_full,
+        y_full = y_full,
+        K_outer = K_outer,
+        K_inner = K_inner,
+        seed = current_seed,
+        n_random_repeats = n_random_repeats
+      )
+
+      # On marque le numéro de la répétition
+      res_k_rep[, cv_repeat_id := r]
+      list_reps_k[[r]] <- res_k_rep
+    }
+
+    # Fusion des répétitions pour ce palier K
+    all_elbow_results[[as.character(k_val)]] <- rbindlist(list_reps_k)
+  }
+
+  # Fusion finale de tous les paliers K
+  final_dt <- rbindlist(all_elbow_results)
+
+  # On s'assure que topK est un facteur pour un bel affichage en boxplot
+  final_dt[, topK_factor := factor(topK, levels = sort(unique(topK)))]
+
+  # Nettoyage des témoins Random (comme discuté, on les concatène tous)
+  final_dt[method %like% "Random", `:=`(method = "Random", context = "Baseline")]
+
+  return(final_dt)
+}

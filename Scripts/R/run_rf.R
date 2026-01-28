@@ -10,34 +10,17 @@ run_rf_nested_cv <- function(
     K_outer = 5, K_inner = 5,
     seed = 123
 ) {
-
-  stopifnot(nrow(X) == length(y))
   library(data.table)
   library(caret)
   library(ranger)
 
   set.seed(seed)
-
-  # Création des folds externes
   outer_folds <- createFolds(y, k = K_outer, returnTrain = TRUE)
 
-  results <- data.table(
-    outer_fold = integer(),
-    R2 = numeric(),
-    RMSE = numeric(),
-    num.trees = integer(),
-    mtry = integer(),
-    min.node.size = integer()
-  )
-
-  predictions_all <- data.table(
-    y_obs = numeric(),
-    y_pred = numeric(),
-    outer_fold = integer()
-  )
+  results <- data.table()
+  predictions_all <- data.table()
 
   for (f in seq_len(K_outer)) {
-
     train_idx <- outer_folds[[f]]
     test_idx  <- setdiff(seq_along(y), train_idx)
 
@@ -46,47 +29,37 @@ run_rf_nested_cv <- function(
     y_train <- y[train_idx]
     y_test  <- y[test_idx]
 
-    # ---------- CV interne ----------
+    # --- CV Interne  ---
     inner_folds <- createFolds(y_train, k = K_inner, returnTrain = TRUE)
-    grid_perf <- copy(rf_grid)
-    grid_perf <- as.data.table(grid_perf)
-    grid_perf[, RMSE := NA_real_]
+    grid_perf <- as.data.table(copy(rf_grid))
+    grid_perf[, RMSE_cv := NA_real_]
 
     for (g in seq_len(nrow(grid_perf))) {
-
       rmse_inner <- numeric(K_inner)
-
       for (k in seq_len(K_inner)) {
-
         tr_idx <- inner_folds[[k]]
         te_idx <- setdiff(seq_along(y_train), tr_idx)
 
         rf_inner <- ranger(
-          x = X_train[tr_idx, ],
-          y = y_train[tr_idx],
-          num.trees = grid_perf$num.trees[[g]],
-          mtry = grid_perf$mtry[[g]],
-          min.node.size = grid_perf$min.node.size[[g]],
-          importance = "none",
+          x = X_train[tr_idx, ], y = y_train[tr_idx],
+          num.trees = grid_perf$num.trees[g],
+          mtry = min(grid_perf$mtry[g], ncol(X_train)),
+          min.node.size = grid_perf$min.node.size[g],
           num.threads = 3
         )
-
         y_pred_inner <- predict(rf_inner, X_train[te_idx, ])$predictions
         rmse_inner[k] <- sqrt(mean((y_train[te_idx] - y_pred_inner)^2))
       }
-
-      grid_perf$RMSE[g] <- mean(rmse_inner)
+      grid_perf$RMSE_cv[g] <- mean(rmse_inner)
     }
 
-    # Hyperparamètres optimaux
-    best <- grid_perf[which.min(RMSE)]
+    best <- grid_perf[which.min(RMSE_cv)]
 
-    # ---------- Modèle final ----------
+    # --- Modèle Final (Outer Fold) ---
     rf_final <- ranger(
-      x = X_train,
-      y = y_train,
+      x = X_train, y = y_train,
       num.trees = best$num.trees,
-      mtry = best$mtry,
+      mtry = min(best$mtry, ncol(X_train)),
       min.node.size = best$min.node.size,
       importance = "permutation",
       num.threads = 3
@@ -94,36 +67,21 @@ run_rf_nested_cv <- function(
 
     y_pred <- predict(rf_final, X_test)$predictions
 
-    #R2_test <- cor(y_test, y_pred)^2
+    # Calcul des métriques
     R2_test <- 1 - mean((y_test - y_pred)^2) / var(y_test)
     RMSE_test <- sqrt(mean((y_test - y_pred)^2))
 
-    results <- rbind(
-      results,
-      data.table(
-        outer_fold = f,
-        R2 = R2_test,
-        RMSE = RMSE_test,
-        num.trees = best$num.trees,
-        mtry = best$mtry,
-        min.node.size = best$min.node.size
-      )
-    )
-
-    predictions_all <- rbind(
-      predictions_all,
-      data.table(
-        y_obs = y_test,
-        y_pred = y_pred,
-        outer_fold = f
-      )
-    )
+    results <- rbind(results, data.table(
+      outer_fold = f,
+      R2 = R2_test,
+      RMSE = RMSE_test,
+      num.trees = best$num.trees,
+      mtry = best$mtry,
+      min.node.size = best$min.node.size
+    ))
   }
 
-  return(list(
-    performance = results,
-    predictions = predictions_all
-  ))
+  return(list(performance = results, predictions = predictions_all))
 }
 
 
@@ -354,4 +312,75 @@ run_rf_hybrid_pipeline <- function(
   }
 
   return(rbindlist(res_hybrid))
+}
+
+
+
+################################################################################
+# FONCTION : run_elbow_pipeline_RF
+# Adaptée pour le pipeline Random Forest avec Repeated Nested CV
+################################################################################
+run_elbow_pipeline_RF <- function(
+    topK_vector = c(10, 20, 50, 100, 200, 500), # RF est lent, on limite souvent les K au début
+    all_scores_dt,
+    phenotypes,
+    methods,
+    contexts,
+    X_full,
+    y_full,      # Liste de phénotypes
+    rf_grid,     # La grille d'hyperparamètres
+    K_outer = 5,
+    K_inner = 5,
+    n_cv_repeats = 5, # Nombre de répétitions de la 5-fold CV
+    seed = 123,
+    n_random_repeats = 3 # Nombre de témoins aléatoires par palier K
+) {
+  library(data.table)
+  all_elbow_results <- list()
+
+  for (k_val in topK_vector) {
+    message("\n" , paste0(rep("=", 50), collapse = ""))
+    message(">>> RF ELBOW PALIER K = ", k_val, " | ", n_cv_repeats, " CV repeats")
+    message(paste0(rep("=", 50), collapse = ""))
+
+    list_reps_k <- list()
+
+    for (r in seq_len(n_cv_repeats)) {
+      current_seed <- seed + (r * 1000)
+
+      # Appel de ta fonction RF
+      # Note : Ta fonction run_rf_from_scores actuelle renvoie un data.table
+      # mais attention, à l'intérieur elle doit extraire $performance du nested_cv
+      res_k_rep <- run_rf_from_scores(
+        all_scores_dt = all_scores_dt,
+        phenotypes = phenotypes,
+        methods = methods,
+        contexts = contexts,
+        topK = k_val,
+        X_full = X_full,
+        y_full = y_full[[phenotypes[1]]], # Adaptation si tu passes un seul phéno
+        rf_grid = rf_grid,
+        K_outer = K_outer,
+        K_inner = K_inner,
+        seed = current_seed
+      )
+
+      res_k_rep[, cv_repeat_id := r]
+      list_reps_k[[r]] <- res_k_rep
+    }
+
+    all_elbow_results[[as.character(k_val)]] <- rbindlist(list_reps_k)
+  }
+
+  # Fusion finale
+  final_dt <- rbindlist(all_elbow_results, fill = TRUE)
+
+  # Création du facteur ordonné pour le plot
+  final_dt[, topK := as.numeric(as.character(topK))]
+  final_dt[, topK_factor := factor(topK, levels = sort(unique(topK)))]
+
+  # Unification du Random pour le plot
+  final_dt[method %like% "Random", `:=`(method = "Random", context = "Baseline")]
+
+  return(final_dt)
 }

@@ -11,7 +11,7 @@ format:
 
 
 ```{r setup, include=FALSE}
-# 1. Chargement des bibliothèques
+
 library(ranger)
 library(caret)
 library(data.table)
@@ -19,10 +19,10 @@ library(ggplot2)
 library(arrow)
 library(glmnet)
 
-# 2. Source des fonctions (Assure-toi que les chemins sont corrects)
 source("R/run_ridge.R")
 source("R/run_rf.R")
 source("R/run_models_from_scores.R")
+source("R/Phenotype_prediction_pipeline.R")
 
 knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 ```
@@ -36,20 +36,412 @@ Ce document présente les performances des modèles de prédiction (Ridge et Ran
 Pheno_FILE <- "data/pheno_null.rds"
 pheno_dt <- as.data.table(readRDS(Pheno_FILE))
 
+
 # Chargement Génotypes
 load("data/Genomic.rda")
 load("data/localisation.rda")
 
-# Préparation Matrices
+
 pheno_dt[, ID := rownames(Genomic)]
-X_full <- as.matrix(Genomic)
+X_matrix <- as.matrix(Genomic)
 
 # Chargement et Ranking des Scores SNP
+
 cols_to_read <- c("SNP", "phenotype", "method", "context", "mean")
 all_scores_dt <- read_parquet("Pipelines_scoring_SNP/results/all_scores_merged_2.parquet", col_select = cols_to_read)
 
-# Calcul du rang (Frank) : plus le score 'mean' est haut, plus le rang est petit (Top SNP)
+# Calcul du rang 
 all_scores_dt[, rank := frank(-mean, ties.method = "average"), by = .(phenotype, method, context)]
+```
+
+```{r}
+pheno_dt
+```
+
+
+
+```{r}
+unique(all_scores_dt$phenotype)
+```
+
+```{r}
+
+target_pheno <- c("BrAnglVert")
+y_list <- list()
+y_list[[target_pheno]] <- pheno_dt[[target_pheno]]
+
+# Grille d'hyperparamètres pour le Random Forest
+
+my_rf_grid <- data.table(
+  num.trees = 500,           
+  mtry = c(10, 50, 100, 500, 1000, 5000, 10000),     
+  min.node.size = c(1, 5)   
+)
+```
+
+
+
+
+```{r}
+
+results <- run_parallel_pipeline(
+  topK_vector      = c(10, 50, 100, 500, 1000, 5000, 10000), 
+  all_scores_dt    = all_scores_dt,       
+  phenotypes       = target_pheno,
+  methods          = c("FarmCPU", "MLM", "RF"),
+  contexts         = c("residuals","phenotype","GWAS","LMM_residuals"),
+  X_full           = X_matrix,
+  y_full_list      = y_list,
+  model_type       = "ridge",
+  n_cv_repeats     = 10,                   
+  n_random_reps    = 3,                   
+  K_outer          = 5,
+  K_inner          = 5,
+  n_cores          = 8,                   
+  seed_start       = 42
+)
+```
+
+```{r}
+results
+```
+
+```{r}
+saveRDS(results, file = "results/perf_BrAnglVert_pheno_brut.rds")
+```
+
+
+```{r}
+# 1. Créer le vecteur manuellement
+files <- c("results/perf_CIRC2009_pheno_brut.rds")
+
+# 2. Vérifier s'ils existent (sécurité)
+files <- files[file.exists(files)]
+
+all_results_merged <- rbindlist(lapply(files, readRDS), fill = TRUE)
+```
+
+```{r}
+all_results_merged
+```
+
+```{r}
+
+plot_data <- copy(all_results_merged)
+
+plot_data[method %like% "Random" | method == "random", `:=`(method = "Random", context = "Baseline")]
+
+plot_data[, method_clean := fcase(
+  method == "Random", "Procédure de sélection :\naléatoire",
+  #method == "RF" & context == "phenotype", "Procédure de sélection :\nRF - phénotype observé",
+  #method == "RF" & context == "residuals", "Procédure de sélection :\nRF - phénotype déflaté",
+  method == "MLM", "Procédure de sélection :\nMLM",
+  method == "FarmCPU", "Procédure de sélection :\nFarmCPU",
+  default = NA_character_ 
+)]
+plot_data <- plot_data[!is.na(method_clean)]
+
+# Ordre des facettes
+methods_order <- c(
+  "Procédure de sélection :\naléatoire",
+  "Procédure de sélection :\nRF - phénotype observé",
+  "Procédure de sélection :\nRF - phénotype déflaté",
+  "Procédure de sélection :\nMLM",
+  "Procédure de sélection :\nFarmCPU"
+)
+plot_data[, label_run := factor(method_clean, levels = methods_order)]
+
+plot_data[, topK_factor := factor(as.numeric(as.character(topK)), levels = sort(unique(as.numeric(as.character(topK)))))]
+
+ggplot(plot_data, aes(x = topK_factor, y = R2, fill = label_run)) +
+  facet_wrap(~label_run, ncol = 3) + 
+  
+  geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.size = 0.5) +
+  geom_jitter(width = 0.15, alpha = 0.15, size = 0.3) +
+  
+  stat_summary(fun = median, geom = "text", aes(label = sprintf("%.2f", ..y..)), 
+               vjust = -5.5, size = 2.5, fontface = "bold") +
+  
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "blue", size = 0.7) +
+  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+
+  coord_cartesian(ylim = c(0, 1)) + 
+  scale_y_continuous(breaks = seq(0, 1, 0.2)) +
+  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  
+  # AJOUT DE LA LIGNE DE RÉFÉRENCE ROUGE
+  geom_hline(yintercept = 0.57, linetype = "solid", color = "red", size = 1) + 
+  
+  # OPTIONNEL : AJOUTER UNE ANNOTATION TEXTE POUR EXPLIQUER LA LIGNE
+  annotate("text", x = 1, y = 0.8, label = "Référence : R² = 0.57", 
+           color = "red", fontface = "bold", hjust = 0, size = 3,vjust = -5.5) +
+  
+  theme_minimal() +
+  scale_fill_manual(values = c(
+    "Procédure de sélection :\naléatoire" = "#999999",
+    "Procédure de sélection :\nRF - phénotype observé" = "#E41A1C",
+    "Procédure de sélection :\nRF - phénotype déflaté" = "#FF7F00",
+    "Procédure de sélection :\nMLM" = "#377EB8",
+    "Procédure de sélection :\nFarmCPU" = "#4DAF4A"
+  )) +
+  labs(
+    title = "Évaluation des performances de prédiction des modèles Ridge en fonction des procédures de sélection de variables",
+    subtitle = "Performances de prédiction (R²) pour la prédiction du trait : pheno_null déflaté de P et K",
+    x = "Nombre de marqueurs (Top K)",
+    y = expression(bold(R^2) ~ "(validation croisée)")
+  ) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 11, italic = TRUE, hjust = 0.5),
+    legend.position = "none",
+    strip.text = element_text(size = 11, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    panel.spacing = unit(1.2, "lines")
+  )
+```
+
+
+```{r}
+
+plot_data <- copy(results)
+
+plot_data[method %like% "Random" | method == "random", `:=`(method = "Random", context = "Baseline")]
+
+plot_data[, method_clean := fcase(
+  method == "Random", "Procédure de sélection :\naléatoire",
+  #method == "RF" & context == "phenotype", "Procédure de sélection :\nRF - phénotype observé",
+  #method == "RF" & context == "residuals", "Procédure de sélection :\nRF - phénotype déflaté",
+  method == "MLM", "Procédure de sélection :\nMLM",
+  method == "FarmCPU", "Procédure de sélection :\nFarmCPU",
+  default = NA_character_ 
+)]
+plot_data <- plot_data[!is.na(method_clean)]
+
+# Ordre des facettes
+methods_order <- c(
+  "Procédure de sélection :\naléatoire",
+  "Procédure de sélection :\nRF - phénotype observé",
+  "Procédure de sélection :\nRF - phénotype déflaté",
+  "Procédure de sélection :\nMLM",
+  "Procédure de sélection :\nFarmCPU"
+)
+plot_data[, label_run := factor(method_clean, levels = methods_order)]
+
+plot_data[, topK_factor := factor(as.numeric(as.character(topK)), levels = sort(unique(as.numeric(as.character(topK)))))]
+
+ggplot(plot_data, aes(x = topK_factor, y = R2, fill = label_run)) +
+  facet_wrap(~label_run, ncol = 3) + 
+  
+  geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.size = 0.5) +
+  geom_jitter(width = 0.15, alpha = 0.15, size = 0.3) +
+  
+  stat_summary(fun = median, geom = "text", aes(label = sprintf("%.2f", ..y..)), 
+               vjust = -6.5, size = 3, fontface = "bold") +
+  
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "blue", size = 0.7) +
+  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+
+  coord_cartesian(ylim = c(0, 1)) + 
+  scale_y_continuous(breaks = seq(0, 1, 0.2)) +
+  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  
+  # AJOUT DE LA LIGNE DE RÉFÉRENCE ROUGE
+  geom_hline(yintercept = 0.12, linetype = "solid", color = "red", size = 1) + 
+  
+  # OPTIONNEL : AJOUTER UNE ANNOTATION TEXTE POUR EXPLIQUER LA LIGNE
+  annotate("text", x = 1, y = 0.8, label = "Référence : R² = 0.12", 
+           color = "red", fontface = "bold", hjust = 0, size = 3,vjust = -5.5) +
+  
+  theme_minimal() +
+  scale_fill_manual(values = c(
+    "Procédure de sélection :\naléatoire" = "#999999",
+    "Procédure de sélection :\nRF - phénotype observé" = "#E41A1C",
+    "Procédure de sélection :\nRF - phénotype déflaté" = "#FF7F00",
+    "Procédure de sélection :\nMLM" = "#377EB8",
+    "Procédure de sélection :\nFarmCPU" = "#4DAF4A"
+  )) +
+  labs(
+    title = "Évaluation des performances de prédiction des modèles Ridge en fonction des procédures de sélection de variables",
+    subtitle = "Performances de prédiction (R²) pour la prédiction du trait : Angle insertion des branches",
+    x = "Nombre de marqueurs (Top K)",
+    y = expression(bold(R^2) ~ "(validation croisée)")
+  ) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 11, italic = TRUE, hjust = 0.5),
+    legend.position = "none",
+    strip.text = element_text(size = 11, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    panel.spacing = unit(1.2, "lines")
+  )
+```
+
+
+
+
+$$\text{soit V la matrice de variance - covariance pour un phénotype donné, alors on peut la décomposer ainsi : V} = K\sigma^2_g + I\sigma^2_\epsilon$$ 
+
+$$u \sim \mathcal{N}(0, K\sigma^2_g)$$
+algorithme REML (Restricted Maximum Likelihood) cherche les meilleures valeurs pour 
+$\sigma^2_g$
+
+et 
+
+$\sigma^2_\epsilon$ 
+
+par itération
+
+
+
+```{r}
+# Calcul de la limite supérieure pour le RMSE afin que les étiquettes ne sortent pas du cadre
+y_max_rmse <- max(plot_data$RMSE, na.rm = TRUE) * 1.1 
+
+ggplot(plot_data, aes(x = topK_factor, y = RMSE, fill = method)) +
+  facet_wrap(~label_run) + 
+  
+  geom_boxplot(alpha = 0.6, outlier.colour = "red", outlier.size = 0.5) +
+  geom_jitter(width = 0.1, alpha = 0.2, size = 0.5) +
+
+  # Affichage des médianes du RMSE
+  stat_summary(
+    fun = median, 
+    geom = "text", 
+    aes(label = sprintf("%.3f", ..y..)), 
+    vjust = -1.5,       # Ajusté pour le RMSE
+    size = 2.5,         
+    fontface = "bold"
+  ) +
+  
+  # Ligne de tendance de la moyenne
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "darkblue", size = 0.8) +
+  
+  # On enlève la ligne à 0 si elle gêne, ou on la garde comme référence plancher
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  
+  # On laisse l'axe Y s'ajuster aux données du phénotype
+  coord_cartesian(ylim = c(0, y_max_rmse)) +
+  
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") + # Changement de couleur pour différencier du R2
+  labs(
+    title = paste("Analyse de l'Erreur (RMSE) - Phenotype:", target_pheno),
+    subtitle = "Plus la valeur est basse, meilleure est la précision. Valeurs : Médianes du RMSE.",
+    x = "Nombre de SNPs inclus (Top K)",
+    y = "RMSE (Root Mean Square Error)"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 9, face = "bold"),
+    legend.position = "bottom" # Remis la légende car c'est utile pour le RMSE
+  )
+```
+
+
+
+
+## RF 
+
+```{r}
+my_rf_grid <- data.table(
+  num.trees = c(500), 
+  mtry = c(10, 50),
+  min.node.size = c(1, 5)
+)
+methods_run  <- c("RF", "FarmCPU", "MLM")
+contexts_run <- c("residuals", "phenotype", "GWAS", "LMM_residuals")
+
+target_pheno <- "CIRC2009"
+
+ks_to_test <- c(10,20,50,100)
+
+scores_sub <- all_scores_dt[phenotype == target_pheno]
+
+
+elbow_results_rf <- run_elbow_pipeline(
+  topK_vector = ks_to_test,
+  all_scores_dt = scores_sub,
+  phenotypes = target_pheno,
+  methods = methods_run,
+  contexts = contexts_run,
+  X_full = X_full,
+  y_full = pheno_dt,
+  model_name = "RF",
+  model_fun = run_rf_model,
+  model_params = list(rf_grid = my_rf_grid),
+  n_cv_repeats = 10,
+  K_outer = 5,
+  K_inner = 5,
+  seed = 42,
+  n_random_repeats = 3
+)
+
+
+saveRDS(elbow_results_rf, "results/elbow_RF_CIRC2009_500.rds")
+```
+
+
+```{r}
+plot_data <- copy(elbow_results_rf)
+
+plot_data[method %like% "Random", `:=`(
+  method = "Random",
+  context = "Baseline"
+)]
+
+# Création du label pour le faceting
+plot_data[, label_run := paste(method, context, sep = "\n")]
+
+methods_order <- c("Random\nBaseline", unique(plot_data[method != "Random", label_run]))
+plot_data[, label_run := factor(label_run, levels = methods_order)]
+
+
+plot_data[, topK := as.numeric(as.character(topK))]
+
+plot_data[, topK_factor := factor(topK, levels = sort(unique(topK)))]
+```
+
+
+```{r}
+ggplot(plot_data, aes(x = topK_factor, y = R2, fill = method)) +
+  facet_wrap(~label_run) + 
+  
+  geom_boxplot(alpha = 0.6, outlier.colour = "red", outlier.size = 0.5) +
+  geom_jitter(width = 0.1, alpha = 0.2, size = 0.5) +
+  
+
+  stat_summary(
+    fun = median, 
+    geom = "text", 
+    aes(label = sprintf("%.3f", ..y..)), # Formatage à 3 décimales
+    vjust = -3.5,       # Ajustement vertical pour placer au-dessus
+    size = 2.5,         
+    fontface = "bold"
+  ) +
+  
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "blue", size = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  
+  coord_cartesian(ylim = c(0, 1)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.2)) +
+  
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set1") +
+  labs(
+    title = paste("Elbow Method - Phenotype:", target_pheno),
+    subtitle = "Valeurs indiquées : Médianes des R2 par palier K",
+    x = "Nombre de SNPs inclus (Top K)",
+    y = "R2 (Cross-validation externe)"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 9, face = "bold"),
+    legend.position = "none"
+  )
 ```
 
 # Paramétrage Global
@@ -258,7 +650,7 @@ summary(all_comparisons_dt)
 # Intégration et Visualisation Finale
 
 ```{r}
-all_comparisons_dt<-readRDS(file.path(res_dir, paste0("full_res_top", "5000", ".rds")))
+all_comparisons_dt<-readRDS(file.path(res_dir, paste0("full_res_top", "100", ".rds")))
 ```
 
 ```{r}

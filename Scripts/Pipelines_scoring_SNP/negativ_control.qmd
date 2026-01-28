@@ -72,7 +72,8 @@ var_g
 h2_target <- 0.5   # Le bruit représente 50 % de variance populationnelle cf R^2 des modèles lm(phenos ~ pop)
 ```
 
-$$ h^2 = \frac{\sigma_g^2}{\sigma_g^2 + \sigma_e^2} \qquad <=> \qquad\sigma_e^2 = \sigma_g^2 \frac{1 - h^2}{h^2} $$
+$$ h^2 = \frac{\sigma_g^2}{\sigma_g^2 + \sigma_e^2} \qquad <=> \qquad\sigma_e^2 = \sigma_g^2 \frac{1 - h^2}{h^2}$$
+
 
 ```{r}
 sigma_e2 <- var_g * (1 - h2_target) / h2_target
@@ -99,7 +100,7 @@ Pour un individu $i$ appartenant à la population $j$, le phénotype simulé $Y_
 
 $$Y_{ij} = \beta_{j} + \epsilon_{ij}$$
 
-$\beta_{j} \sim \mathcal{N}(0, \sigma_{pop}^2)$ $\epsilon_{ij} \sim \mathcal{N}(0, \sigma_{e}^2)$
+$*\beta_{j} \sim \mathcal{N}(0, \sigma_{pop}^2)$ $\epsilon_{ij} \sim \mathcal{N}(0, \sigma_{e}^2)$*
 
 ```{r}
 Loc_FILE <- "../data/localisation.rda"
@@ -178,7 +179,6 @@ load(Genomic_FILE)
 geno <- as.data.table(Genomic)
 ```
 
-
 ```{r}
 Kinship_FILE <- "../data/Kinship_Poplar.rda"
 load(Kinship_FILE)
@@ -195,13 +195,41 @@ pheno_all<- as.data.table(readRDS(Pheno_FILE))
 pheno_all[, ID := rownames(Genomic)]
 ```
 
-## SVD matrice Kinship
+## SVD de la matrice SNP
+
+
 
 ```{r}
-eig <- eigen(K, symmetric = TRUE)
-U <- eig$vectors           
-lambda <- eig$values       
+variances <- apply(geno, 2, var, na.rm = TRUE)
+
+cols_to_keep <- which(variances > 0 & !is.na(variances))
 ```
+
+
+```{r}
+geno_filtered <- geno[, ..cols_to_keep]
+
+print(dim(geno_filtered))
+```
+
+```{r}
+geno_scaled <- scale(geno_filtered) 
+dim(geno_scaled)
+```
+
+```{r}
+res_svd <- svd(geno_scaled)
+```
+
+
+```{r}
+U <- res_svd$u %*% diag(res_svd$d)
+```
+
+```{r}
+dim(U)
+```
+
 
 ```{r}
 library(sommer)
@@ -217,6 +245,24 @@ pcs_dt[, ID := pheno_all$ID]
 df_mixed <- merge(pheno_all, loc_df[, .(ID, Population)], by = "ID")
 df_mixed <- merge(df_mixed, pcs_dt, by = "ID")
 
+K_matrix <- as.matrix(K)
+rownames(K_matrix) <- colnames(K_matrix) <- df_mixed$ID
+
+
+mod <- mmer(fixed = as.formula(paste("BrAnglVert", "~ Population + PC1 + PC2 + PC3")),
+              random = ~ vsr(ID, Gu = K_matrix),
+              rcov = ~ units,
+              data = df_mixed,
+              verbose = FALSE)
+```
+
+```{r}
+summary(mod)
+```
+
+
+```{r}
+
 # Liste des phénotypes à traiter 
 phenos_to_process <- c(
   "CIRC2009","CIRC2011","HT2009","BudFlushSlope",
@@ -230,7 +276,8 @@ get_mixed_residuals <- function(var, data, K_mat) {
   
   # Formule : on retire l'effet fixe de la Pop et des 3 premières PC
   # On ajoute l'effet aléatoire de la Kinship (K)
-  mod <- mmer(fixed = as.formula(paste(var, "~ Population + PC1 + PC2 + PC3")),
+  
+mod <- mmer(fixed = as.formula(paste(var, "~ Population + PC1 + PC2 + PC3")),
               random = ~ vsr(ID, Gu = K_mat),
               rcov = ~ units,
               data = data,
@@ -253,6 +300,56 @@ Y_mixed_residuals$ID <- df_mixed$ID
 # Sauvegarde
 saveRDS(Y_mixed_residuals, "../data/LMM_Residuals_Kinship_Pop.rds")
 ```
+```{r}
+get_model_stats_robust <- function(var, data, K_mat) {
+  message("Analyse statistique de : ", var)
+  
+  # Ajustement du modèle
+  mod <- mmer(fixed = as.formula(paste(var, "~ Population + PC1 + PC2 + PC3")),
+              random = ~ vsr(ID, Gu = K_mat),
+              rcov = ~ units,
+              data = data,
+              verbose = FALSE)
+  
+  # Extraction des variances (sigma)
+
+  res_vc <- as.data.frame(summary(mod)$varcomp)
+  va <- res_vc[grep("ID", rownames(res_vc)), "VarComp"] # Variance additive
+  ve <- res_vc[grep("units", rownames(res_vc)), "VarComp"] # Variance résiduelle
+  h2 <- va / (va + ve)
+  
+  #  Extraction des effets fixes et calcul des P-values
+
+  fixed_effects <- mod$Beta
+  fixed_effects$SE <- sqrt(diag(mod$VarBeta))
+  fixed_effects$t_stat <- fixed_effects$Estimate / fixed_effects$SE
+  # Calcul de la p-value (approximation normale pour grands échantillons)
+  fixed_effects$p_val <- 2 * (1 - pnorm(abs(fixed_effects$t_stat)))
+  
+  p_pop <- min(fixed_effects[grep("Population", fixed_effects$Effect), "p_val"], na.rm = TRUE)
+  # Idem pour les PCs
+  p_pcs <- min(fixed_effects[grep("PC", fixed_effects$Effect), "p_val"], na.rm = TRUE)
+  
+  return(data.frame(
+    Trait = var,
+    Var_Additive = round(va, 4),
+    Var_Residuelle = round(ve, 4),
+    Heritabilite = round(h2, 3),
+    P_val_Pop_Min = format.pval(p_pop, digits = 3),
+    P_val_PC_Min = format.pval(p_pcs, digits = 3)
+  ))
+}
+
+# On relance l'application
+stats_list <- lapply(phenos_to_process, get_model_stats_robust, data = df_mixed, K_mat = K_matrix)
+summary_table <- do.call(rbind, stats_list)
+
+print(summary_table)
+```
+```{r}
+head(summary_table)
+```
+
 
 ```{r}
 Y_mixed_residuals
@@ -297,10 +394,13 @@ pheno[, ID := rownames(Genomic)]
 pheno
 ```
 
+```{r}
+merged<- merge(pheno_all, loc_df[,list(Population,ID)], by = "ID")
+
+```
 
 ```{r}
-merged<- merge(pheno, loc_df[,list(Population,ID)], by = "ID")
-
+merged
 ```
 
 ```{r}
@@ -341,3 +441,52 @@ ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
 ```
 
 Mince ! Lorsque l'on créé un phénotype avec 50% de variance expliquée par la kinship, le modèle simple LM (phéno kinship \~ Population) à un R\^2 très faible (0.1)... Cela signifie que la corrélation entre les catégories Population et Kinship sont plutot faible finalement ...
+
+## LM pheno ~ PC mat snp
+
+```{r}
+library(data.table)
+library(ggplot2)
+
+# 1. Préparation des données
+df <- as.data.table(merged)
+pcs_dt <- as.data.table(U[, 1:3]) # On ne garde que les 3 premières
+colnames(pcs_dt) <- paste0("PC", 1:3)
+pcs_dt[, ID := pheno_all$ID]
+
+# Fusionner les PC avec le dataframe principal
+df <- merge(df, pcs_dt, by = "ID")
+
+# 2. Identification des phénotypes
+phenos <- names(df)[sapply(df, is.numeric)]
+# On exclut les colonnes de gestion et les nouvelles PC de la liste des phénotypes à tester
+phenos <- setdiff(phenos, c("class_index", "Lat", "Lgn", "ID", "PC1", "PC2", "PC3"))
+
+# 3. Fonction de calcul du R²
+get_r2 <- function(var) {
+  # Formule : Phénotype ~ PC1 + PC2 + PC3
+  form <- as.formula(paste(var, "~ PC1 + PC2 + PC3"))
+  mod  <- lm(form, data = df)
+  return(summary(mod)$r.squared)
+}
+
+# 4. Calcul des résultats
+r2_values <- data.table(
+  phenotype = phenos,
+  r2 = sapply(phenos, get_r2)
+)
+
+# 5. Visualisation
+ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
+  geom_segment(aes(x = reorder(phenotype, r2), xend = reorder(phenotype, r2), y = 0, yend = r2), color = "grey") +
+  geom_point(size = 3, color = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Part de variance expliquée par la structure (PC1-3)",
+    subtitle = "Modèle : Phénotype ~ PC1 + PC2 + PC3",
+    y = expression(bold(R^2) ~ "global (Structure)"),
+    x = "Caractère phénotypique"
+  ) +
+  theme_minimal()
+```
+
