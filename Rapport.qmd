@@ -53,11 +53,19 @@ Les travaux conduits précédemment au sein de l’unité ont permis la constitu
 
 Néanmoins, cette approche augmente considérablement la dimensionnalité du jeu de données, soulevant plusieurs défis méthodologiques. Premièrement, l'hétérogénéité du nombre de variables entre les couches omiques induit un déséquilibre structurel : les couches les plus denses (nottament les 3 contextes épigénétiques) surreprésentent l'information, biaisant ainsi la contribution relative de chaque niveau omique au sein du modèle. Deuxièmement, l'augmentation du nombre de variables complexifie l’interprétation des résultats. La présence de variables non informatives, sans lien biologique avec le caractère étudié, dilue le signal causal. Cela rend difficile l'identification précise des locus d’intérêt ainsi que la quantification de la part de variance expliquée par ces derniers.
 
-Pour pallier ces limites, Alexandre Duplan a développé un filtre de sélection de variables visant à ne conserver que les marqueurs les plus informatifs de chaque couche. Dans cette optique de réduction de dimension, il a mis en œuvre un modèle mixte multi-locus (MLMM), qui est une approche de GWAS (Genome-Wide Association Study), afin d'évaluer l'association statistique de chaque SNP avec les phénotypes. En sélectionnant les marqueurs présentant les p-values les plus significatives (inférieures à un seuil défini), il a pu isoler un ensemble de 31 754 SNPs associés de manière significative aux différents caractères, réduisant ainsi la dimensionalité du jeu de donné génomique avant l'étape d'intégration.
+Pour pallier ces limites, Alexandre Duplan a développé un filtre de sélection de variables visant à ne conserver que les marqueurs les plus informatifs de chaque couche. Dans cette optique de réduction de dimension, il a mis en œuvre un modèle mixte multi-locus (MLMM), qui est une approche de GWAS (Genome-Wide Association Study), afin d'évaluer l'association statistique de chaque SNP un enssemble de variables : environemmentales, phénotypes et autres. En sélectionnant les marqueurs présentant les p-values les plus significatives (inférieures à un seuil défini), il a pu isoler un ensemble de 31 754 SNPs associés de manière significative aux différents caractères, réduisant ainsi la dimensionalité du jeu de donné génomique avant l'étape d'intégration.
 
 Cette stratégie de filtrage à eu un effet variable sur les performances de prédictions des différents phénotypes : tantôt positif, tantôt négatif. Alexandre Duplan suggère que ce filtre à pu éliminer du bruit, mais également des variables explicatives réelles, ce qui s'est traduit parfois par une dégradation des performances du modèle. Les analyses comparatives ont également révélé un résultat contre-intuitif; la performance prédictive obtenue à partir d'un sous-ensemble de marqueurs génomique de même taille mais sélectionnés aléatoirement s'avère équivalente à celle obtenue via une sélection ciblée par MLMM/GWAS.
 
-## Objectifs de l'étude et hypothèses de travail
+## Objectifs de l'étude
+
+Dans la continuité des traveaux menés par Alexandre Duplan, nous avons mis en oeuvre des procédures de selections de variables afin de construire des modèles de prédictions de phénotypes à partir des données génomiques. 
+
+Notre objectif est d'améliorer les performances de prédictions 
+
+Notre étude se décompose en deux parties ou nous explorerons différentes procédures de sélection de variables. Dans un premier temps nous présenterons les résultats obtenus par des approches linéaires de sélections de variables, à savoir le MLM et FarmCPU. Dans un second temps nous présenterons une procédure de sélection basée sur les scores d'importances obtenus via Random Forest. 
+
+
 
 / ici. je souhaite modifier l'approche point de départ = 1 constat : performances prédictives : Selection MLMM (initialement employé pour réduire les faux positifs et améliorer l'explicabilité des résultats) = selection aléatoire + Notre Objectif : améliorer les performances prédictives et améliorer l'explicabilité des modèles.  
 
@@ -143,7 +151,7 @@ Les modèles linéaires classiques (type MLMM) échouent à capturer une part de
 Nous postulons que l'utilisation de la Random Forest (RF) permet d'identifier des interactions complexes (gène x gène) qui échappent aux modèles linéaires de type MLMM. Là où le MLMM capture la contribution additive infinitésimale, le RF détecterait des dépendances non linéaires et des effets épistatiques. Nous supposons donc que ces deux méthodes ne voient pas le même signal génétique et que les deux méthodes ne sont pas redondantes mais complémentaires.
 
 
-Nous émettons l'hypothèse que le scoring par RF aboutit à une sélection de SNPs plus restreinte mais plus dense en information. En isolant les combinaisons de variants les plus prédictives, la RF permettrait de s'affranchir des signaux redondants liés au Déséquilibre de Liaison (LD) et à la structure de population. Le scoring par RF aboutirait à une sélection de SNPs qui seraient plus spécifique des processus biologiques du caractère étudié et situés sur des locus fonctionnels.
+Nous émettons l'hypothèse que le scoring [dff](Plot/CIRC2009_RR_Brut) RF aboutit à une sélection de SNPs plus restreinte mais plus dense en information. En isolant les combinaisons de variants les plus prédictives, la RF permettrait de s'affranchir des signaux redondants liés au Déséquilibre de Liaison (LD) et à la structure de population. Le scoring par RF aboutirait à une sélection de SNPs qui seraient plus spécifique des processus biologiques du caractère étudié et situés sur des locus fonctionnels.
 
 Si cette hypothèse se confirme, l'intérêt majeur réside dans un gain direct en explicabilité. En réduisant le nombre de SNPs candidats à une liste de locus hautement spécifiques au caractère étudié, nous facilitons l'interprétation biologique grâce à l'identification de gènes candidats ou des voies métaboliques spécifiques.
 
@@ -211,7 +219,7 @@ Mathieson et McVean (2012). Differential confounding of GWAS by population strat
 
  
 
-
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Caractérisation des ressources génomiques et phénotypiques
 
 La prédiction de phénotypes complexes se heurte à un obstacle majeur : la structure de population est hautement hiérarchisée chez le peuplier noir (*Populus nigra*)
@@ -222,7 +230,7 @@ SNPs et structure de la population : qlq ACP etc etc
 
 ## Génération de phénotypes de contrôle (traits nuls)
 
-# Correction de la structure de population et de l'apparentement
+## Correction de la structure de population et de l'apparentement
 
 Justification du modèle $Q+K$ (Yu & Price) pour obtenir des résidus propres :
 
@@ -240,7 +248,50 @@ $$y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{Co-facteurs}} + \u
 
 
 FarmCPU 
-$$y = X\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{pseudo-QTNs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + e$$
+
+modèle à effets fixes : 
+
+$$y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{pseudo-QTNs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + e$$
+
+calcul de la P-Value par t-test : 
+
+$$t = \frac{\hat{d}_j}{SE(\hat{d}_j)}$$
+
+Où :$\hat{d}_j$ : L'effet estimé du SNP (la "pente" de la relation entre le génotype et le phénotype).$SE(\hat{d}_j)$ : L'erreur standard de cet effet, calculée par :
+
+$$SE(\hat{d}_j) = \sqrt{\frac{\sigma_e^2}{(n-k) \cdot Var(S_j)}}$$
+(avec $\sigma_e^2$ la variance résiduelle, $n-k$ les degrés de liberté et $Var(S_j)$ la variance du génotype).
+
+La P-value est la probabilité que la valeur absolue de $T$ (variable aléatoire suivant une loi de Student) soit supérieure à la valeur $|t|$ observée, sous l'hypothèse nulle ($H_0 : d_j = 0$).
+
+$$P\text{-value} = 2 \cdot P(T > |t|)$$
+
+Elle se calcule en intégrant la fonction de densité de la loi de Student :
+
+$$P\text{-value} = 2 \int_{|t|}^{+\infty} f(x, \nu) \, dx$$
+
+Où :$f(x, \nu)$ est la densité de probabilité de la loi de Student.$\nu = n - k$ représente les degrés de liberté (nombre d'individus moins nombre de paramètres estimés comme les PC et les pseudo-QTN).
+
+
+
+
+
+modèle a effet aléatoires : 
+
+$$y = \mu + u + e$$
+$$u \sim \mathcal{N}(0, \mathbf{K}_{pseudo}\sigma_a^2)$$
+avec $$\sigma_a^2$$ la variance additive
+
+
+$$Var(u) = 2\mathbf{K}_{pseudo}\sigma_a^2$$
+
+Où :$u$ : L'effet génétique aléatoire total.$\mathbf{K}_{pseudo}$ : La matrice de parenté (Kinship) calculée uniquement à partir des pseudo-QTN sélectionnés par l'algorithme SUPER.$\sigma_a^2$ : La variance génétique additive estimée par REML (Restricted Maximum Likelihood).
+
+
+
+
+
+
 $$W = \frac{\hat{\alpha}^2}{\text{Var}(\hat{\alpha})} \sim \chi^2$$
 
 
@@ -296,7 +347,8 @@ $\sigma^2_e$ (units) : $0.198$
 $h^2$ : $\frac{0.182}{0.182 + 0.198} = \mathbf{0.48}$
 Zratio (1.07) montre que cette estimation reste incertaine statistiquement
 
-# Analyse comparative des méthodes de scoring des SNPs
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Analyse comparative des méthodes de scoring des SNPs : Moïse 
 
 ## Estimation des effets additifs via le modèle MLMM
 
