@@ -30,7 +30,7 @@ load(config$data$localisation)
 load(config$data$kinship)
 ```
 
-## Simuler des Phenotypes 
+## Simulation de Phenotypes 
 
 ```{r}
 ## Test phenotype null
