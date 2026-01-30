@@ -181,7 +181,7 @@ nigra.}
 
 \begin{document}
 \maketitle
-\ifdefined\Shaded\renewenvironment{Shaded}{\begin{tcolorbox}[frame hidden, enhanced, interior hidden, boxrule=0pt, borderline west={3pt}{0pt}{shadecolor}, breakable, sharp corners]}{\end{tcolorbox}}\fi
+\ifdefined\Shaded\renewenvironment{Shaded}{\begin{tcolorbox}[interior hidden, borderline west={3pt}{0pt}{shadecolor}, enhanced, breakable, sharp corners, frame hidden, boxrule=0pt]}{\end{tcolorbox}}\fi
 
 \renewcommand*\contentsname{Table des Matières}
 {
@@ -245,12 +245,12 @@ sélection de variables visant à ne conserver que les marqueurs les plus
 informatifs de chaque couche. Dans cette optique de réduction de
 dimension, il a mis en œuvre un modèle mixte multi-locus (MLMM), qui est
 une approche de GWAS (Genome-Wide Association Study), afin d'évaluer
-l'association statistique de chaque SNP avec les phénotypes. En
-sélectionnant les marqueurs présentant les p-values les plus
-significatives (inférieures à un seuil défini), il a pu isoler un
-ensemble de 31 754 SNPs associés de manière significative aux différents
-caractères, réduisant ainsi la dimensionalité du jeu de donné génomique
-avant l'étape d'intégration.
+l'association statistique de chaque SNP un enssemble de variables :
+environemmentales, phénotypes et autres. En sélectionnant les marqueurs
+présentant les p-values les plus significatives (inférieures à un seuil
+défini), il a pu isoler un ensemble de 31 754 SNPs associés de manière
+significative aux différents caractères, réduisant ainsi la
+dimensionalité du jeu de donné génomique avant l'étape d'intégration.
 
 Cette stratégie de filtrage à eu un effet variable sur les performances
 de prédictions des différents phénotypes : tantôt positif, tantôt
@@ -262,9 +262,22 @@ performance prédictive obtenue à partir d'un sous-ensemble de marqueurs
 génomique de même taille mais sélectionnés aléatoirement s'avère
 équivalente à celle obtenue via une sélection ciblée par MLMM/GWAS.
 
-\hypertarget{objectifs-de-luxe9tude-et-hypothuxe8ses-de-travail}{%
-\subsection{Objectifs de l'étude et hypothèses de
-travail}\label{objectifs-de-luxe9tude-et-hypothuxe8ses-de-travail}}
+\hypertarget{objectifs-de-luxe9tude}{%
+\subsection{Objectifs de l'étude}\label{objectifs-de-luxe9tude}}
+
+Dans la continuité des traveaux menés par Alexandre Duplan, nous avons
+mis en oeuvre des procédures de selections de variables afin de
+construire des modèles de prédictions de phénotypes à partir des données
+génomiques.
+
+Notre objectif est d'améliorer les performances de prédictions
+
+Notre étude se décompose en deux parties ou nous explorerons différentes
+procédures de sélection de variables. Dans un premier temps nous
+présenterons les résultats obtenus par des approches linéaires de
+sélections de variables, à savoir le MLM et FarmCPU. Dans un second
+temps nous présenterons une procédure de sélection basée sur les scores
+d'importances obtenus via Random Forest.
 
 / ici. je souhaite modifier l'approche point de départ = 1 constat :
 performances prédictives : Selection MLMM (initialement employé pour
@@ -481,8 +494,9 @@ et des effets épistatiques. Nous supposons donc que ces deux méthodes ne
 voient pas le même signal génétique et que les deux méthodes ne sont pas
 redondantes mais complémentaires.
 
-Nous émettons l'hypothèse que le scoring par RF aboutit à une sélection
-de SNPs plus restreinte mais plus dense en information. En isolant les
+Nous émettons l'hypothèse que le scoring
+\href{Plot/CIRC2009_RR_Brut}{dff} RF aboutit à une sélection de SNPs
+plus restreinte mais plus dense en information. En isolant les
 combinaisons de variants les plus prédictives, la RF permettrait de
 s'affranchir des signaux redondants liés au Déséquilibre de Liaison (LD)
 et à la structure de population. Le scoring par RF aboutirait à une
@@ -626,9 +640,8 @@ population stratification. PLoS Genetics. → Explique pourquoi la
 correction peut éliminer de vrais signaux biologiques liés à
 l'adaptation locale.
 
-\hypertarget{caractuxe9risation-des-ressources-guxe9nomiques-et-phuxe9notypiques}{%
-\section{Caractérisation des ressources génomiques et
-phénotypiques}\label{caractuxe9risation-des-ressources-guxe9nomiques-et-phuxe9notypiques}}
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+\# Caractérisation des ressources génomiques et phénotypiques
 
 La prédiction de phénotypes complexes se heurte à un obstacle majeur :
 la structure de population est hautement hiérarchisée chez le peuplier
@@ -645,7 +658,7 @@ SNPs et structure de la population : qlq ACP etc etc
 nuls)}\label{guxe9nuxe9ration-de-phuxe9notypes-de-contruxf4le-traits-nuls}}
 
 \hypertarget{correction-de-la-structure-de-population-et-de-lapparentement}{%
-\section{Correction de la structure de population et de
+\subsection{Correction de la structure de population et de
 l'apparentement}\label{correction-de-la-structure-de-population-et-de-lapparentement}}
 
 Justification du modèle \(Q+K\) (Yu \& Price) pour obtenir des résidus
@@ -657,6 +670,61 @@ propres :
 
 Pour isoler le signal épistatique du signal polygénique de fond, nous
 utilisons un modèle linéaire mixte (LMM) pour déflater le phénotype.
+
+\[y = P\beta + u + \epsilon\] \[P\beta\]
+\[\hat{\epsilon} = y - (P\hat{\beta} + \hat{u})\] MLMM
+\[y = S_i + S + P\beta + u + \epsilon\]
+\[y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{Co-facteurs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + u + \epsilon\]
+
+FarmCPU
+
+modèle à effets fixes :
+
+\[y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{pseudo-QTNs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + e\]
+
+calcul de la P-Value par t-test :
+
+\[t = \frac{\hat{d}_j}{SE(\hat{d}_j)}\]
+
+Où :\(\hat{d}_j\) : L'effet estimé du SNP (la ``pente'' de la relation
+entre le génotype et le phénotype).\(SE(\hat{d}_j)\) : L'erreur standard
+de cet effet, calculée par :
+
+\[SE(\hat{d}_j) = \sqrt{\frac{\sigma_e^2}{(n-k) \cdot Var(S_j)}}\] (avec
+\(\sigma_e^2\) la variance résiduelle, \(n-k\) les degrés de liberté et
+\(Var(S_j)\) la variance du génotype).
+
+La P-value est la probabilité que la valeur absolue de \(T\) (variable
+aléatoire suivant une loi de Student) soit supérieure à la valeur
+\(|t|\) observée, sous l'hypothèse nulle (\(H_0 : d_j = 0\)).
+
+\[P\text{-value} = 2 \cdot P(T > |t|)\]
+
+Elle se calcule en intégrant la fonction de densité de la loi de Student
+:
+
+\[P\text{-value} = 2 \int_{|t|}^{+\infty} f(x, \nu) \, dx\]
+
+Où :\(f(x, \nu)\) est la densité de probabilité de la loi de
+Student.\(\nu = n - k\) représente les degrés de liberté (nombre
+d'individus moins nombre de paramètres estimés comme les PC et les
+pseudo-QTN).
+
+modèle a effet aléatoires :
+
+\[y = \mu + u + e\]
+\[u \sim \mathcal{N}(0, \mathbf{K}_{pseudo}\sigma_a^2)\] avec
+\[\sigma_a^2\] la variance additive
+
+\[Var(u) = 2\mathbf{K}_{pseudo}\sigma_a^2\]
+
+Où :\(u\) : L'effet génétique aléatoire total.\(\mathbf{K}_{pseudo}\) :
+La matrice de parenté (Kinship) calculée uniquement à partir des
+pseudo-QTN sélectionnés par l'algorithme SUPER.\(\sigma_a^2\) : La
+variance génétique additive estimée par REML (Restricted Maximum
+Likelihood).
+
+\[W = \frac{\hat{\alpha}^2}{\text{Var}(\hat{\alpha})} \sim \chi^2\]
 
 Distinction entre Kinship et PCs Dans notre modèle, nous utilisons deux
 niveaux de correction : - \textbf{La Kinship (effet aléatoire) :} Elle
@@ -729,9 +797,8 @@ calcul de l'héritabilité (\(h^2\)) :
 \(h^2\) : \(\frac{0.182}{0.182 + 0.198} = \mathbf{0.48}\) Zratio (1.07)
 montre que cette estimation reste incertaine statistiquement
 
-\hypertarget{analyse-comparative-des-muxe9thodes-de-scoring-des-snps}{%
-\section{Analyse comparative des méthodes de scoring des
-SNPs}\label{analyse-comparative-des-muxe9thodes-de-scoring-des-snps}}
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+\# Analyse comparative des méthodes de scoring des SNPs : Moïse
 
 \hypertarget{estimation-des-effets-additifs-via-le-moduxe8le-mlmm}{%
 \subsection{Estimation des effets additifs via le modèle
@@ -859,6 +926,57 @@ garantissant la fiabilité biologique de la sélection.
   moyen.
 \end{itemize}
 
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Étape de Déflation (Modèle Mixte)
+\end{enumerate}
+
+\[\hat{\epsilon} = y - (P\hat{\beta} + \hat{u})\]
+
+2.1. Échantillonnage des sous-espaces de variables
+
+\[\mathcal{X}_{m} \subset \{S_1, \dots, S_{total}\} \quad \text{avec} \quad |\mathcal{X}_{m}| = 5\,000\]
+
+2.2. Étape de Modélisation (Random Forest) On ajuste un ensemble de
+\(B\) arbres de décision
+
+\[\hat{\epsilon}_{i,m} = \frac{1}{B} \sum_{b=1}^{B} T_b(x_{i, \mathcal{X}_m})\]
+\(T_b\) représente un arbre individuel \(x_i\) représente les valeurs
+des SNPs de l'individu \(i\) pour les colonnes sélectionnées
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{2}
+\tightlist
+\item
+  Score d'importance pour un SNP i :
+\end{enumerate}
+
+\[Score_j =\Delta I(S_j) = \sum_{n} [w_n \cdot \text{Var}(n) - (w_L \cdot \text{Var}(n_L) + w_R \cdot \text{Var}(n_R))]\]
+\(n\) (Le nœud parent) : C'est le groupe d'individus (peupliers) juste
+avant d'être divisé par le SNP \(j\).\(n_L\) et \(n_R\) (\(L\) pour
+Left, \(R\) pour Right) : Ce sont les deux sous-groupes créés après la
+division (les ``nœuds fils'')
+
+\(w_n, w_L, w_R\) (Les poids) : Ils correspondent à la proportion
+d'individus présents dans chaque nœud par rapport au nombre total
+d'individus dans l'échantillon
+(\(N\)).\(w_n = \frac{N_{individus\_dans\_n}}{N_{total}}\)\(w_L = \frac{N_{individus\_dans\_n_L}}{N_{total}}\)\(w_R = \frac{N_{individus\_dans\_n_R}}{N_{total}}\)
+
+et on utilise la version ``corrected'' (basée sur l'approche de Nembrini
+et al.), le score final pour le SNP \(j\) est :
+
+\[Score_j = \Delta I(X_j)_{obs} - \Delta I(X_j)_{perm}\]
+
+4 . Agrégation et Ranking Le score final de ton fichier Parquet
+(\(S_{final}\)) pour un SNP \(j\) est la moyenne des scores obtenus sur
+toutes les tâches (ici 870 pour selectionner chaque variable en moyenne
+20 fois) :
+
+\[Score_{final}(S_j) = \frac{1}{N_j} \sum_{m: S_j \in \mathcal{X}_m} Score_{j,t}\]
+
 \hypertarget{comportement-des-moduxe8les-de-scoring-face-au-signal-aluxe9atoire}{%
 \subsection{Comportement des modèles de scoring face au signal
 aléatoire}\label{comportement-des-moduxe8les-de-scoring-face-au-signal-aluxe9atoire}}
@@ -984,6 +1102,22 @@ linéaire, par construction, ne peut percevoir.
 \hypertarget{uxe9valuation-des-performances-de-pruxe9diction-guxe9nomique}{%
 \section{Évaluation des performances de prédiction
 génomique}\label{uxe9valuation-des-performances-de-pruxe9diction-guxe9nomique}}
+
+Pour chaque méthode, on définit d'abord le sous-ensemble \(\mathcal{S}\)
+des \(K\) marqueurs les plus importants :
+\[\mathcal{S} = \{ j \mid \text{rank}(\text{score}_{j}) \le K \}\]
+
+Ce sous-ensemble permet de construire la matrice de design restreinte
+par concaténation des colonnes de génotypes sélectionnées :
+\[X^{(\mathcal{S})} = \left[ S_j \right]_{j \in \mathcal{S}} = [ S_{j_1}, S_{j_2}, \dots, S_{j_K} ]\]
+
+\[\lambda^* = \arg \min_{\lambda} \text{MSE}_{CV}(\lambda)\]
+
+\[\hat{\beta} = \arg \min_{\beta} \left( \| y - X^{(\mathcal{S})}\beta \|^2_2 + \lambda^* \| \beta \|^2_2 \right)\]
+
+\[\hat{\beta} = \arg \min_{\beta} \left( \sum_{i=1}^{N} (y_i - \sum_{j \in \mathcal{S}} x_{ij}\beta_j)^2 + \lambda \sum_{j \in \mathcal{S}} \beta_j^2 \right)\]
+
+\[R^2_{pred} = 1 - \frac{\sum (y_{obs} - y_{pred})^2}{\sum (y_{obs} - \bar{y}_{obs})^2}\]
 
 \hypertarget{validation-de-la-baseline-de-pruxe9diction}{%
 \subsection{Validation de la baseline de
