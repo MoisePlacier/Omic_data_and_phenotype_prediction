@@ -231,12 +231,7 @@ Ces résultats confirment que la structure de population (P) constitue la premi�
 
 ## Structure fine : La parenté cryptique (Matrice K)
 
-« Au-delà de la structuration globale entre les bassins versants, il existe une structure plus subtile à l'échelle locale. Pour la capturer, nous utilisons une matrice de parenté (K), ou Kinship matrix, estimée via l'estimateur de Yang et al. (2011).
-
-$$K = \frac{Z{Z}^T}{N}$$
-avec : ${Z}$ la matrice centrée et réduite des marqueurs moléculaires considérés et ${N}$ le nombre de marqueurs moléculaires
-
-Cette matrice permet de modéliser :
+« Au-delà de la structuration globale entre les bassins versants, il existe une structure plus subtile à l'échelle locale. Pour la capturer, nous utilisons une matrice de parenté (K), ou Kinship matrix. Cette matrice permet de modéliser :
 
 Les relations d'apparentement étroites : Elle identifie les individus partageant des ancêtres récents au sein d'une même vallée.
 
@@ -265,17 +260,79 @@ La combinaison du LD et de la structure de population peut générer des signaux
 
 ## Génération de phénotypes de contrôle (traits nuls)
 
+Afin d’évaluer la robustesse des méthodes de sélection de SNPs et de prédiction génomique, nous avons généré plusieurs phénotypes simulés.
+Ces traits nuls permettent :
+
+de tester la sensibilité des modèles à la structure de population,
+d’évaluer leur capacité à ne pas détecter de faux signaux,
+de comparer les performances sur des phénotypes plus ou moins structurés.
+
+Les simulations reposent sur les données de localisation (Population, Latitude, Longitude, Altitude) et sur l’alignement strict entre matrices génomiques et phénotypiques.
+
+### Phénotype structuré par la population
+Ce premier phénotype simule un trait entièrement déterminé par l’origine géographique, reproduisant un cas où la structure de population domine la variance phénotypique (cas fréquent chez Populus nigra). Ce trait est utile pour tester la capacité des modèles à ne pas confondre structure et signal biologique.
+
+### Phénotype structuré par la géographie
+Ce phénotype dépend d’un gradient environnemental (latitude, longitude, altitude), simulant un trait adaptatif. Il permet d’évaluer la sensibilité des modèles aux gradients spatiaux continus, souvent confondus avec des signaux génétiques.
+
+### Phénotype mixte (population + géographie)
+Ce dernier phénotype combine effets démographiques et gradients géographiques, reproduisant un cas réaliste où :
+une partie du trait est liée à l’histoire évolutive,
+une autre à l’adaptation locale.
+Ce phénotype est particulièrement utile pour tester la capacité des modèles à démêler structure et signal fonctionnel, un enjeu central de l’étude.
+
 # Correction de la structure de population et de l'apparentement
 
-Justification du modèle $Q+K$ (Yu & Price) pour obtenir des résidus propres :
+Chez Populus nigra, la forte structuration démographique entraîne des corrélations non causales entre génotypes et phénotypes : un SNP peut sembler associé à un trait simplement parce qu’il caractérise une population, et non en raison d’un effet biologique réel (Price et al., 2006). Ce phénomène provoque des faux positifs en GWAS et peut surestimer les performances prédictives.
+
+Dans une population fortement structurée comme celle du peuplier noir, trois sources d’information génétique sont entremêlées :
+
+Structure de population ($P$) : différences génétiques massives entre bassins versants
+
+Parenté ($K$) : ressemblance génétique entre individus apparentés
+
+Effets des QTLs : signal biologique réellement lié au phénotype
+
+Dans les données brutes, ces composantes sont colinéaires, et un modèle naïf peut obtenir un R² élevé simplement en capturant $P$ et $K$, sans jamais identifier les variants causaux. C’est ce qui explique le paradoxe observé dans la thèse de Duplan : une sélection aléatoire de SNPs prédit aussi bien qu’une sélection ciblée, car les deux reflètent essentiellement la structure démographique.
+
+Pour isoler le signal fonctionnel, il est donc indispensable de déflater le phénotype des composantes $P$ et $K$ avant toute sélection de SNPs. Cette correction est réalisée grâce au modèle linéaire mixte $Q+K$ (Price et al., 2006 et Yu et al. 2006), référence actuelle pour contrôler la stratification en génétique des populations.
+
 
 ## Implémentation du modèle mixte (Q+K)
 
 Pour isoler le signal épistatique du signal polygénique de fond, nous utilisons un modèle linéaire mixte (LMM) pour déflater le phénotype.
 
+## Modèle linéaire mixte simple (MLM)
+
+Le premier modèle utilisé est un LMM classique (Q+K), qui corrige simultanément :
+
+la structure de population via $P\beta$
+la parenté via $u$
+
+Le modèle s’écrit :
+
 $$y = P\beta + u + \epsilon$$
-$$P\beta$$ 
+où : 
+
+$P\beta$ : effets fixes (PCs, populations, covariables)
+
+$u\sim{N(0,K\sigma_{g}^2)}$ : effet aléatoire de parenté
+
+$\epsilon\sim{N(0,I\sigma_{e}^2)}$ : bruit résiduel
+
+
+Une fois le modèle ajusté, on extrait les résidus déflatés :
+
 $$\hat{\epsilon} = y - (P\hat{\beta} + \hat{u})$$
+
+Ces résidus représentent la partie du phénotype non expliquée par la structure ni par la parenté, et servent ensuite :
+
+à la sélection de SNPs
+à la prédiction génomique
+à l’analyse épistatique
+
+
+
 MLMM
 $$y = S_i + S + P\beta + u + \epsilon$$
 $$y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{Co-facteurs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + u + \epsilon$$
