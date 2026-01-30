@@ -235,9 +235,7 @@ Le peuplier noir étant une espèce strictement ripisylve, son écologie est int
 
 En raison de cet isolement géographique, chaque bassin versant fonctionne comme une unité évolutive distincte, ou "île génétique", où la dérive génétique et l'adaptation locale s'exercent de manière isolée. Il en résulte une forte différenciation génétique inter-population, que l'on observe très clairement sur l'Analyse en Composantes Principales (ACP). 
 
-
-graphe de l'ACP !!!!!!!
-
+![ACP]
 
 L’ACP réalisée sur les 217 000 SNPs met en évidence un regroupement net des individus par population, une séparation marquée selon les deux premiers axes, et une forte colinéarité entre géographie et génotypes.
 Ces résultats confirment que la structure de population (P) constitue la première source de variance génétique. Cela signifie que, la proximité génétique entre deux arbres reflète d'abord leur proximité géographique.
@@ -261,8 +259,6 @@ L'intégration conjointe de cette double structuration (P + K) est impérative. 
 Enfin, l’efficacité de la détection des QTLs repose sur le Déséquilibre de Liaison (LD). Le génome du peuplier présente des blocs d’haplotypes, au sein desquels les SNPs sont fortement corrélés (LD). 
 Un haplotype est un ensemble de variations génétiques héritées ensemble en raison de leur proximité sur le chromosome. Il peut inclure des gènes ou des régions du génome qui influencent des traits quantitatifs, ces régions étant appelées QTLs (Quantitative Trait Loci).
 
-![ACP]
-
 Cette architecture génétique est une lame à double tranchant :
 
 Un levier de détection : Elle facilite la découverte de QTLs. En effet, grâce au LD, un SNP mesuré peut "tagger" (ou servir de balise à) un variant causal non observé, permettant ainsi une détection indirecte: c'est l'effet proxy.
@@ -274,7 +270,7 @@ La combinaison du LD et de la structure de population peut générer des signaux
 
 ## Génération de phénotypes de contrôle (traits nuls)
 
-<<<<<<< HEAD
+
 Afin d’évaluer la robustesse des méthodes de sélection de SNPs et de prédiction génomique, nous avons généré plusieurs phénotypes simulés.
 Ces traits nuls permettent :
 
@@ -297,8 +293,6 @@ une autre à l’adaptation locale.
 Ce phénotype est particulièrement utile pour tester la capacité des modèles à démêler structure et signal fonctionnel, un enjeu central de l’étude.
 
 
-# Correction de la structure de population et de l'apparentement
-=======
 ## Correction de la structure de population et de l'apparentement
 
 
@@ -390,13 +384,7 @@ $\sigma^2_g$: variance génétique additive
 Les pseudo-QTNs jouent le même rôle que les cofacteurs du MLMM, mais sont mis à jour itérativement.
 Statistique de test :
 
-<<<<<<< HEAD
-=======
-FarmCPU 
-
-modèle à effets fixes : 
-
-$$y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{pseudo-QTNs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + e$$
+$$W = \frac{\hat{\alpha}^2}{\text{Var}(\hat{\alpha})} \sim \chi^2$$
 
 calcul de la P-Value par t-test : 
 
@@ -418,9 +406,6 @@ $$P\text{-value} = 2 \int_{|t|}^{+\infty} f(x, \nu) \, dx$$
 Où :$f(x, \nu)$ est la densité de probabilité de la loi de Student.$\nu = n - k$ représente les degrés de liberté (nombre d'individus moins nombre de paramètres estimés comme les PC et les pseudo-QTN).
 
 
-
-
-
 modèle a effet aléatoires : 
 
 $$y = \mu + u + e$$
@@ -433,12 +418,6 @@ $$Var(u) = 2\mathbf{K}_{pseudo}\sigma_a^2$$
 Où :$u$ : L'effet génétique aléatoire total.$\mathbf{K}_{pseudo}$ : La matrice de parenté (Kinship) calculée uniquement à partir des pseudo-QTN sélectionnés par l'algorithme SUPER.$\sigma_a^2$ : La variance génétique additive estimée par REML (Restricted Maximum Likelihood).
 
 
-
-
-
-
->>>>>>> d78de19a8992672cab89534ad47a56a91b7c3633
-$$W = \frac{\hat{\alpha}^2}{\text{Var}(\hat{\alpha})} \sim \chi^2$$
 
 
 ## Construction de la matrice de parenté (K)
@@ -493,7 +472,7 @@ $\sigma^2_e$ (units) : $0.198$
 $h^2$ : $\frac{0.182}{0.182 + 0.198} = \mathbf{0.48}$
 Zratio (1.07) montre que cette estimation reste incertaine statistiquement
 
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 # Analyse comparative des méthodes de scoring des SNPs : Moïse 
 
 ## Estimation des effets additifs via le modèle MLMM
