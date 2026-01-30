@@ -208,10 +208,6 @@ Mathieson et McVean (2012). Differential confounding of GWAS by population strat
 → Explique pourquoi la correction peut éliminer de vrais signaux biologiques liés à l’adaptation locale.
 
 
-
- 
-
-
 # Caractérisation des ressources génomiques et phénotypiques
 
 La prédiction de phénotypes complexes chez Populus nigra repose sur l’exploitation conjointe de données génomiques à très haute dimension (≈217 000 SNPs) et de mesures phénotypiques couvrant un large spectre de traits (croissance, phénologie, morphologie, biochimie). Cependant, un obstacle majeur limite l’interprétation et la performance des modèles : la structure de population fortement hiérarchisée de l’espèce.
@@ -219,7 +215,53 @@ Comme le montrent les analyses préliminaires et les travaux antérieurs (Duplan
 
 ## Etude de la structure des populations de Populus nigra
 
-SNPs et structure de la population : qlq ACP etc etc
+L'échantillonnage de l'étude repose sur 199 individus de Populus nigra, issus de 11 populations naturelles distribuées le long de grands bassins versants européens.
+
+Le peuplier noir étant une espèce strictement ripisylve, son écologie est intrinsèquement liée à la dynamique des cours d'eau. Cette dépendance aux réseaux hydrographiques limite drastiquement les flux de gènes (pollen et graines) entre les différentes vallées.
+
+En raison de cet isolement géographique, chaque bassin versant fonctionne comme une unité évolutive distincte, ou "île génétique", où la dérive génétique et l'adaptation locale s'exercent de manière isolée. Il en résulte une forte différenciation génétique inter-population, que l'on observe très clairement sur l'Analyse en Composantes Principales (ACP). 
+
+
+graphe de l'ACP !!!!!!!
+
+
+L’ACP réalisée sur les 217 000 SNPs met en évidence un regroupement net des individus par population, une séparation marquée selon les deux premiers axes, et une forte colinéarité entre géographie et génotypes.
+Ces résultats confirment que la structure de population (P) constitue la première source de variance génétique. Cela signifie que, la proximité génétique entre deux arbres reflète d'abord leur proximité géographique.
+
+
+## Structure fine : La parenté cryptique (Matrice K)
+
+« Au-delà de la structuration globale entre les bassins versants, il existe une structure plus subtile à l'échelle locale. Pour la capturer, nous utilisons une matrice de parenté (K), ou Kinship matrix, estimée via l'estimateur de Yang et al. (2011).
+
+$$K = \frac{Z{Z}^T}{N}$$
+avec : ${Z}$ la matrice centrée et réduite des marqueurs moléculaires considérés et ${N}$ le nombre de marqueurs moléculaires
+
+Cette matrice permet de modéliser :
+
+Les relations d'apparentement étroites : Elle identifie les individus partageant des ancêtres récents au sein d'une même vallée.
+
+La covariance génétique résiduelle : Elle capture les corrélations que les premières composantes principales (PCs) de la population ne parviennent pas à absorber.
+
+Le bruit de fond polygénique : Elle intègre l'effet combiné de l'ensemble des marqueurs du génome ayant des effets mineurs sur le trait.
+
+L'intégration conjointe de cette double structuration (P + K) est impérative. Sans elle, nous ferions face à un biais de confusion majeur : un SNP pourrait être déclaré statistiquement significatif alors qu'il n'est qu'un simple marqueur de l'origine géographique ou familiale de l'arbre, sans lien biologique fonctionnel avec le phénotype. »
+
+
+## Déséquilibre de Liaison (LD) et Architecture Génétique
+
+Enfin, l’efficacité de la détection des QTLs repose sur le Déséquilibre de Liaison (LD). Le génome du peuplier présente des blocs d’haplotypes, au sein desquels les SNPs sont fortement corrélés (LD). 
+Un haplotype est un ensemble de variations génétiques héritées ensemble en raison de leur proximité sur le chromosome. Il peut inclure des gènes ou des régions du génome qui influencent des traits quantitatifs, ces régions étant appelées QTLs (Quantitative Trait Loci).
+
+graphe !!!!!!!!!!!!!!!
+
+Cette architecture génétique est une lame à double tranchant :
+
+Un levier de détection : Elle facilite la découverte de QTLs. En effet, grâce au LD, un SNP mesuré peut "tagger" (ou servir de balise à) un variant causal non observé, permettant ainsi une détection indirecte: c'est l'effet proxy.
+
+Un défi d'interprétation : Elle induit une forte redondance informationnelle. Plusieurs SNPs colinéaires portent la même information, ce qui complexifie l'identification du véritable variant fonctionnel.
+
+La combinaison du LD et de la structure de population peut générer des signaux d'association erronés (faux positifs). C’est pourquoi nous devons appliquer des méthodes d'élagage (LD pruning) et effectuer une étude d'association GWAS (Genome-Wide Association Study) via des modèles mixtes, afin d'isoler le signal biologique réel de la simple corrélation statistique.
+
 
 ## Génération de phénotypes de contrôle (traits nuls)
 
@@ -232,7 +274,7 @@ Justification du modèle $Q+K$ (Yu & Price) pour obtenir des résidus propres :
 Pour isoler le signal épistatique du signal polygénique de fond, nous utilisons un modèle linéaire mixte (LMM) pour déflater le phénotype.
 
 $$y = P\beta + u + \epsilon$$
-$$P\beta$$
+$$P\beta$$ 
 $$\hat{\epsilon} = y - (P\hat{\beta} + \hat{u})$$
 MLMM
 $$y = S_i + S + P\beta + u + \epsilon$$
