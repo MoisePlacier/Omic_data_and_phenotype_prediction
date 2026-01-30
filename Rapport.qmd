@@ -247,7 +247,7 @@ L'intégration conjointe de cette double structuration (P + K) est impérative. 
 Enfin, l’efficacité de la détection des QTLs repose sur le Déséquilibre de Liaison (LD). Le génome du peuplier présente des blocs d’haplotypes, au sein desquels les SNPs sont fortement corrélés (LD). 
 Un haplotype est un ensemble de variations génétiques héritées ensemble en raison de leur proximité sur le chromosome. Il peut inclure des gènes ou des régions du génome qui influencent des traits quantitatifs, ces régions étant appelées QTLs (Quantitative Trait Loci).
 
-graphe !!!!!!!!!!!!!!!
+![ACP]
 
 Cette architecture génétique est une lame à double tranchant :
 

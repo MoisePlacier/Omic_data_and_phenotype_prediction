@@ -15,11 +15,16 @@ analysis:
     - RamifSyllep
     - BrAnglVert
     - Dia2015_sqrt
+    - HT_struct_pop
+    - HT_struct_geo
+    - HT_struct_mix
+
 
   maf_threshold: 0.05
   missing_threshold: 0.10
-  n_pcs: 4
+  n_pcs: 5
   use_population_structure: true
+  use_population_covariable: false
   population_column: "Population"
   k_r: true
 
@@ -33,5 +38,5 @@ prediction:
 
 
 settings:
-  n_cores: 11
+  n_cores: 7
   output_dir: "results"
