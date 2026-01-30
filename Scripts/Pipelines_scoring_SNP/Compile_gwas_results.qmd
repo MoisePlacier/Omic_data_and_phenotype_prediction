@@ -1,0 +1,153 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+---
+
+```{r echo=FALSE}
+library(data.table)
+library(stringr)
+library(arrow)
+```
+
+# Lecture des resultats de la gwas
+
+```{r echo=FALSE}
+# Fonction pour lire les resultats de la GWAS
+compile_gwas_results <- function(
+  gwas_root   = "results/GWAS",
+  output_file = "results/gwas_all_results.parquet"
+) {
+
+  pheno_dirs <- list.dirs(gwas_root, recursive = FALSE, full.names = TRUE)
+
+  res <- lapply(pheno_dirs, function(d) {
+
+    phenotype <- basename(d)
+
+    csv_files <- list.files(
+      d,
+      pattern = "\\.(MLM|FarmCPU)\\.csv$",
+      full.names = TRUE
+    )
+
+    lapply(csv_files, function(f) {
+
+      method <- str_extract(basename(f), "(MLM|FarmCPU)")
+      dt <- fread(f)
+
+      # Colonnes p-value = toutes celles qui finissent par .MLM ou .FarmCPU
+      pval_cols <- colnames(dt)[str_detect(colnames(dt), "\\.(MLM|FarmCPU)$")]
+
+      if (length(pval_cols) != 1) {
+        stop("Ambiguïté p-value dans : ", f)
+      }
+
+      # Renommage propre
+      setnames(dt, pval_cols, "p_value")
+
+      # Ajout méta-données
+      dt[
+        ,
+        `:=`(
+          phenotype = phenotype,
+          method    = method,
+          context   = "GWAS"
+        )
+      ]
+
+      # Ordre canonique
+      setcolorder(
+        dt,
+        c(
+          "SNP", "Chromosome", "Position",
+          "MAF", "Effect", "SE", "p_value",
+          "phenotype", "method", "context"
+        )
+      )
+
+      dt
+    })
+  })
+
+  gwas_dt <- rbindlist(unlist(res, recursive = FALSE), fill = FALSE)
+
+  # Écriture parquet sécurisée
+  tmp <- tempfile(fileext = ".parquet")
+  write_parquet(gwas_dt, tmp)
+  file.rename(tmp, output_file)
+
+  message("GWAS compilées (format long) → ", output_file)
+
+  return(gwas_dt[])
+}
+names(all_scores)
+```
+
+# Sauvegardes des resultats
+
+```{r echo=FALSE}
+system.time({
+  gwas_all <- compile_gwas_results(
+    gwas_root   = "results/GWAS",
+    output_file = "results/gwas_all_results.parquet"
+  )
+})
+
+```
+
+# Top SNP GWAS
+
+```{r}
+# fonction pour selectionner un top SNP
+filter_top_gwas_snps <- function(
+  gwas_dt,
+  top_n = 100
+) {
+
+  dt <- as.data.table(gwas_dt)
+
+  # Sécurité minimale
+  required_cols <- c("SNP", "phenotype", "method", "p_value")
+  if (!all(required_cols %in% colnames(dt))) {
+    stop("Colonnes manquantes : ", 
+         paste(setdiff(required_cols, colnames(dt)), collapse = ", "))
+  }
+
+  message("Filtrage des top ", top_n,
+          " SNPs par phenotype et méthode (p-value)")
+
+  res <- dt[
+    ,
+    .SD[order(p_value)][seq_len(min(top_n, .N))],
+    by = .(phenotype, method)
+  ]
+
+  message("Filtrage terminé")
+
+  return(res[])
+}
+
+
+
+```
+
+# Filtrage top n SNP
+
+```{r}
+gwas_all <- read_parquet("results/gwas_all_results.parquet", as_data_table = TRUE)
+gwas_top <- filter_top_gwas_snps(
+  gwas_dt = gwas_all,
+  top_n   = 100
+)
+
+```
+
+# Extration des SNP top n pour un phenotype une methode
+
+```{r}
+library(dplyr)
+d <- gwas_top %>% filter(phenotype == "BrAnglVert", method=="FarmCPU")
+
+
+```
