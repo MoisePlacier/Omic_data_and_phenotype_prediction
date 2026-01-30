@@ -311,13 +311,13 @@ la parenté via $u$
 
 Le modèle s’écrit :
 
-$$y = P\beta + u + \epsilon$$
+$$y = P\beta + S_i\alpha_i + u + \epsilon$$
 où : 
 
 $P\beta$ : effets fixes (PCs, populations, covariables)
-
+$S_i$: génotype du SNP testé $i$
+$\alpha_i$: : effet du $i^e$ SNP testé
 $u\sim{N(0,K\sigma_{g}^2)}$ : effet aléatoire de parenté
-
 $\epsilon\sim{N(0,I\sigma_{e}^2)}$ : bruit résiduel
 
 
@@ -332,19 +332,49 @@ Ces résidus représentent la partie du phénotype non expliquée par la structu
 à l’analyse épistatique
 
 
+## Modèle Linéaire Mixte Multi-locus (MLMM) : ajout de cofacteurs
 
-MLMM
-$$y = S_i + S + P\beta + u + \epsilon$$
+Le MLM simple teste chaque SNP indépendamment, ce qui pose problème lorsque plusieurs QTLs influencent le trait. Le MLMM améliore ce modèle en ajoutant progressivement des cofacteurs (SNPs significatifs) dans le modèle :
+
 $$y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{Co-facteurs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + u + \epsilon$$
+avec : 
+$S_m$ : cofacteurs déjà sélectionnés
+$S_i$ : SNP actuellement testé
+$k$ : nombre de cofacteurs retenus
 
+Le MLMM se distingue par sa capacité à corriger les effets de QTLs majeurs en les intégrant directement comme covariables dans le modèle, ce qui permet de réduire les faux positifs liés à la structure résiduelle et d’améliorer la détection de QTLs secondaires. Il reste fondé sur le principe $Q+K$, en contrôlant simultanément la structure de population et la parenté. Cette approche est particulièrement adaptée lorsque plusieurs QTLs exercent des effets modérés, que certains signaux sont masqués par un QTL majeur, et dans les contextes où la structure de population est forte.
 
+## FarmCPU : Fixed and Random Model Circulating Probability Unification
 
-FarmCPU 
-$$y = X\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{pseudo-QTNs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + e$$
+Le FarmCPU est une évolution du MLMM, conçue pour :
+
+réduire les faux positifs
+augmenter la puissance
+éviter la sur-correction par $K$
+accélérer les calculs
+
+Le FarmCPU sépare explicitement :
+
+Modèle fixe (FEM), qui teste chaque SNP en présence de pseudo-QTNs :
+ 
+$$y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{pseudo-QTNs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + \epsilon$$
+
+Modèle aléatoire (REM), qui met à jour la liste des pseudo-QTNs en utilisant $K$.
+
+$$y = \mu + u + \epsilon$$
+avec:
+$\mu$ : effet fixe (intercepte) 
+$u$ : effets aléatoires $u \sim N(0, K_{pseudo}\sigma^2_g)$ 
+$K_{pseudo}$ : kinship construite uniquement à partir des pseudo-QTN
+$\sigma^2_g$: variance génétique additive 
+
+Les pseudo-QTNs jouent le même rôle que les cofacteurs du MLMM, mais sont mis à jour itérativement.
+Statistique de test :
+
 $$W = \frac{\hat{\alpha}^2}{\text{Var}(\hat{\alpha})} \sim \chi^2$$
 
 
-
+## Construction de la matrice de parenté (K)
 
 Distinction entre Kinship et PCs Dans notre modèle, nous utilisons deux niveaux de correction : - **La Kinship (effet aléatoire) :** Elle modélise la variance liée à l'apparentement "fin" (cousins, frères). Elle traite les individus comme issus d'une distribution continue. - **Les Composantes Principales de la Kinship et la Population (PCs - effets fixes) :** Elles agissent comme des "interrupteurs" puissants retirant les différences massives entre grandes populations géographiques.
 
