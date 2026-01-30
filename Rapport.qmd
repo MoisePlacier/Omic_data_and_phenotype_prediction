@@ -214,7 +214,8 @@ Mathieson et McVean (2012). Differential confounding of GWAS by population strat
 
 # Caractérisation des ressources génomiques et phénotypiques
 
-La prédiction de phénotypes complexes se heurte à un obstacle majeur : la structure de population est hautement hiérarchisée chez le peuplier noir (*Populus nigra*)
+La prédiction de phénotypes complexes chez Populus nigra repose sur l’exploitation conjointe de données génomiques à très haute dimension (≈217 000 SNPs) et de mesures phénotypiques couvrant un large spectre de traits (croissance, phénologie, morphologie, biochimie). Cependant, un obstacle majeur limite l’interprétation et la performance des modèles : la structure de population fortement hiérarchisée de l’espèce.
+Comme le montrent les analyses préliminaires et les travaux antérieurs (Duplan, 2025), la variance génétique est largement dominée par l’origine géographique des individus, ce qui impose une caractérisation fine des composantes démographiques avant toute modélisation prédictive.
 
 ## Etude de la structure des populations de Populus nigra
 
