@@ -214,14 +214,10 @@ effet transphénotypique (top SNP pour plusieurs caractère complexe) capturé p
 
 Mathieson et McVean (2012). Differential confounding of GWAS by population stratification. PLoS Genetics.
 → Explique pourquoi la correction peut éliminer de vrais signaux biologiques liés à l’adaptation locale.
-
-
-=======
-
  
 
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
->>>>>>> d78de19a8992672cab89534ad47a56a91b7c3633
+
 # Caractérisation des ressources génomiques et phénotypiques
 
 La prédiction de phénotypes complexes chez Populus nigra repose sur l’exploitation conjointe de données génomiques à très haute dimension (≈217 000 SNPs) et de mesures phénotypiques couvrant un large spectre de traits (croissance, phénologie, morphologie, biochimie). Cependant, un obstacle majeur limite l’interprétation et la performance des modèles : la structure de population fortement hiérarchisée de l’espèce.
