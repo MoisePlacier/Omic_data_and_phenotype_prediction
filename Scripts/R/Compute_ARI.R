@@ -218,41 +218,39 @@ plot_ari_profiles <- function(dt_ari, window_label) {
   }
 }
 
-.compute_window_emd <- function(score1, score2, positions) {
+.compute_window_emd <- function(s1, s2, pos) {
+  # 1. Traitement des scores : Seuil à zéro (essentiel pour RF corrigée)
+  # On remplace aussi les NA par 0 au passage
+  w1 <- pmax(replace(s1, is.na(s1), 0), 0)
+  w2 <- pmax(replace(s2, is.na(s2), 0), 0)
 
-  # 1. Sécurité : On a besoin de données et de sommes > 0
-  # On remplace les NA par 0 pour le calcul de masse
-  s1 <- replace(score1, is.na(score1), 0)
-  s2 <- replace(score2, is.na(score2), 0)
+  sum1 <- sum(w1)
+  sum2 <- sum(w2)
 
-  # Si une méthode n'a aucun signal dans cette fenêtre (somme = 0),
-  # la distance n'est pas définie ou est maximale. On retourne NA.
-  if (sum(s1) <= 0 || sum(s2) <= 0 || length(positions) < 2) {
+  # 2. Sécurité : il faut du signal positif et au moins 2 SNPs
+  if (sum1 <= 0 || sum2 <= 0 || length(pos) < 2) {
     return(NA_real_)
   }
 
-  # 2. Normalisation des MASSES (Somme = 1)
-  # C'est impératif pour l'EMD : on compare la répartition de probabilité
-  w1 <- s1 / sum(s1)
-  w2 <- s2 / sum(s2)
+  # 3. Normalisation des MASSES (Somme = 1)
+  w1 <- w1 / sum1
+  w2 <- w2 / sum2
 
-  # 3. Normalisation des POSITIONS (Scaling 0-1)
-  # Permet de comparer des fenêtres de tailles différentes
-  # Une distance de 0.1 signifie un déplacement de 10% de la taille de la fenêtre
-  min_p <- min(positions)
-  max_p <- max(positions)
-
+  # 4. Normalisation des POSITIONS (Scaling 0-1)
+  # Permet de comparer l'EMD entre chr de tailles différentes
+  min_p <- min(pos)
+  max_p <- max(pos)
   if (max_p == min_p) return(0)
+  pos_norm <- (pos - min_p) / (max_p - min_p)
 
-  pos_norm <- (positions - min_p) / (max_p - min_p)
-
-  # 4. Calcul Wasserstein
-  tryCatch({
+  # 5. Calcul Wasserstein 1D
+  # Note : wa/wb sont les poids, a/b sont les positions
+  res <- tryCatch({
     transport::wasserstein1d(a = pos_norm, b = pos_norm, p = 1, wa = w1, wb = w2)
-  }, error = function(e) return(NA_real_))
+  }, error = function(e) NA_real_)
+
+  return(res)
 }
-
-
 # ============================================================
 # Calcul de l'EMD Globale (Génome Linéaire)
 # ============================================================
@@ -367,7 +365,7 @@ compute_emd_by_bp_window <- function(
 }
 
 # ============================================================
-# EMD par Chromosome (Global)
+# EMD par Chromosome
 # ============================================================
 
 compute_emd_by_chromosome <- function(
@@ -476,155 +474,679 @@ plot_emd_multi_profiles <- function(dt_multi, title_label = "") {
     )
 }
 
+
 plot_emd_barplot_chr <- function(dt_chr, title_label = "") {
 
-  # On s'assure que chrom_num est bien ordonné numériquement
-  dt_chr[, chrom_num := factor(chrom_num, levels = sort(as.numeric(unique(chrom_num))))]
-  dt_chr[, comparaison := factor(comparaison, levels = unique(comparaison))]
+  # --- Sécurité : Copie locale ---
+  dt_plot <- copy(dt_chr)
 
-  ggplot(dt_chr, aes(x = chrom_num, y = emd, fill = emd)) +
+  # --- Ajustement des colonnes ---
+  if(!"emd" %in% names(dt_plot) & "emd_ld" %in% names(dt_plot)) {
+    setnames(dt_plot, "emd_ld", "emd")
+  }
+
+  if(!"comparaison" %in% names(dt_plot)) {
+    dt_plot[, comparaison := paste(method1, "vs", method2)]
+  }
+
+  # --- Préparation des facteurs ---
+  dt_plot[, chrom_num := factor(chrom_num, levels = sort(as.numeric(unique(chrom_num))))]
+  dt_plot[, comparaison := factor(comparaison, levels = unique(comparaison))]
+
+  # --- Graphique ---
+  ggplot(dt_plot, aes(x = chrom_num, y = emd, fill = emd)) +
     geom_bar(stat = "identity", color = "white", linewidth = 0.2) +
 
-    # Facettage par comparaison (une ligne par paire de méthodes)
+    # Facettage par comparaison
     facet_wrap(~ comparaison, ncol = 1) +
 
-    # Échelle de couleur pour souligner l'intensité
+    # Échelle de couleur FIXÉE entre 0 et 1
     scale_fill_gradientn(
       colors = c("#4575b4", "#abd9e9", "#fee090", "#f46d43", "#d73027"),
-      name = "Divergence\n(EMD)"
+      name = "Divergence\n(EMD)",
+      limits = c(0, 0.2),            # Force l'échelle de 0 à 1
+      breaks = seq(0, 1, 0.05),     # Optionnel : affiche des paliers tous les 0.2
+      oob = scales::squish         # Maintient les valeurs hors-bornes dans le dégradé
     ) +
+
+    # Fixer l'axe Y pour éviter les distorsions visuelles entre paires
+    coord_cartesian(ylim = c(0, 0.15)) +
 
     theme_minimal() +
     theme(
-      strip.text = element_text(face = "bold", size = 10),
+      strip.text = element_text(face = "bold", size = 10, colour = "grey20"),
       axis.text.x = element_text(size = 9),
       panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
       legend.position = "right"
     ) +
     labs(
       title = paste("Divergence Structurelle par Chromosome", title_label),
-      subtitle = "Comparaison de l'Earth Mover's Distance à l'échelle chromosomique entière",
+      subtitle = "Échelle normalisée (0 = Consensus parfait, 1 = Opposition totale)",
       x = "Numéro du Chromosome",
-      y = "EMD (Distance de Wasserstein)",
-      caption = "Une EMD élevée indique que les méthodes localisent les pics d'importance à des endroits différents du chromosome."
+      y = "EMD (Normalisée)",
+      caption = "L'échelle de couleur est fixe (0-1) pour permettre la comparaison entre différents phénotypes."
     )
 }
-
-
-
 
 
 ######################################################################
 ############# La Fonction "Masterclass" LD-EMD #####################
 ########################################################################
 
+library(data.table)
+library(transport)
+library(stats)
+
 compute_multi_ld_emd <- function(
-    geno_mat,           # Matrice individus x SNPs (0/1/2) avec colnames = SNP IDs
-    scores_dt,          # Ton data.table all_scores_dt
-    phenotype_target,   # Le phénotype cible (ex: "Rust")
-    pairs_list,         # Liste des paires : list(c("M1","M2"), ...)
-    top_k = 5000,       # Nombre de SNPs à prendre dans le Top de CHAQUE méthode
-    score_col = "mean"  # La colonne d'importance
+    geno_mat,           # Matrice individus x SNPs (0/1/2) - colnames = SNP IDs
+    scores_dt,          # Data.table contenant les scores (SNP, method, context, mean...)
+    phenotype_target,   # Nom du phénotype cible (ex: "Rust")
+    pairs_list,         # Liste des paires à comparer : list(c("M1","M2"), ...)
+    top_k = 5000,       # Nombre de SNPs à considérer par méthode
+    score_col = "mean"  # Colonne utilisée pour le poids (importance)
 ) {
 
-  # --- 1. Initialisation ---
+  # --- 1. Initialisation & Contrôles ---
+  if (!phenotype_target %in% unique(scores_dt$phenotype)) {
+    stop(sprintf("Le phénotype '%s' est introuvable dans scores_dt.", phenotype_target))
+  }
+
   results_list <- list()
   total_pairs <- length(pairs_list)
 
-  message(sprintf("=== DÉBUT ANALYSE LD-EMD : %d Paires à traiter ===", total_pairs))
-  message(sprintf("Phénotype : %s | Top K : %d SNPs par méthode", phenotype_target, top_k))
+  message(sprintf("\n=== ANALYSE LD-EMD (Optimisée) ==="))
+  message(sprintf("Phénotype : %s | Top K : %d | Paires : %d", phenotype_target, top_k, total_pairs))
 
-  # Barre de progression textuelle
+  # Barre de progression
   pb <- txtProgressBar(min = 0, max = total_pairs, style = 3)
 
-  # Filtrage initial des scores pour le phénotype
+  # Pré-filtrage des scores pour le phénotype (Gain de temps dans la boucle)
   dt_pheno <- scores_dt[phenotype == phenotype_target]
 
   # --- 2. Boucle sur les paires ---
   for (i in seq_along(pairs_list)) {
+
     pair <- pairs_list[[i]]
     m1 <- pair[1]
     m2 <- pair[2]
 
-    # a. Extraction des Top K SNPs pour chaque méthode
-    # On trie par valeur absolue décroissante
-    snps_m1 <- dt_pheno[method_context == m1][order(-abs(get(score_col)))][1:top_k, SNP]
-    snps_m2 <- dt_pheno[method_context == m2][order(-abs(get(score_col)))][1:top_k, SNP]
+    # --- A. Identification de l'Espace de Jeu (Union des Top K) ---
+    # On récupère les IDs des meilleurs SNPs pour chaque méthode
+    snps_m1 <- dt_pheno[method_context == m1][order(-abs(get(score_col)))][1:min(top_k, .N), SNP]
+    snps_m2 <- dt_pheno[method_context == m2][order(-abs(get(score_col)))][1:min(top_k, .N), SNP]
 
-    # b. Création de l'UNION (La zone de jeu)
-    # On ne garde que les SNPs qui existent vraiment dans la matrice de génotype
+    # Union : On veut comparer tout ce qui est important pour l'un OU l'autre
     union_candidates <- unique(c(snps_m1, snps_m2))
-    union_candidates <- union_candidates[!is.na(union_candidates)]
 
-    # Intersection avec les génotypes disponibles (Sécurité anti-crash)
+    # Intersection stricte avec les génotypes disponibles (Sécurité anti-crash)
     valid_snps <- intersect(union_candidates, colnames(geno_mat))
 
-    n_original <- length(union_candidates)
-    n_valid <- length(valid_snps)
-
-    if (n_valid < 10) {
-      warning(sprintf("Pas assez de SNPs communs avec la matrice génotypique pour %s vs %s", m1, m2))
+    # Si pas assez de SNPs communs, on saute
+    if (length(valid_snps) < 5) {
+      warning(sprintf("Paire %s vs %s ignorée : < 5 SNPs communs avec la matrice génotypique.", m1, m2))
       setTxtProgressBar(pb, i)
       next
     }
 
-    # c. Préparation des scores alignés
-    # On extrait les scores pour ces SNPs valides
+    # --- B. Construction de la Table de Poids (Alignement Robuste) ---
+    # 1. Extraction des scores bruts pour l'union des SNPs
     dt_subset <- dt_pheno[SNP %in% valid_snps & method_context %in% c(m1, m2)]
 
-    # Pivot pour avoir une colonne par méthode (alignement parfait)
-    # fill = 0 car si un SNP est dans l'union mais pas dans la méthode (hors top), son score est négligeable
+    # 2. Pivot : SNP en ligne, Méthodes en colonnes
+    # fill = 0 est un premier filet de sécurité, mais incomplet si le SNP manque totalement pour une méthode
     dt_wide <- dcast(dt_subset, SNP ~ method_context, value.var = score_col, fill = 0)
 
-    # Sécurité : alignement strict de l'ordre des lignes avec les colonnes de geno
-    # On trie dt_wide selon l'ordre des SNPs dans valid_snps pour matcher le subset de génotype
-    dt_wide <- dt_wide[match(valid_snps, SNP)]
+    # 3. Alignement FORCE sur valid_snps via Merge (Cœur du correctif)
+    # Cela garantit que l'ordre des lignes correspondra exactement aux colonnes de geno_sub
+    dt_final <- data.table(SNP = valid_snps)
+    dt_final <- merge(dt_final, dt_wide, by = "SNP", all.x = TRUE)
 
-    # d. Extraction Génotype & Calcul LD (Ground Metric)
-    # C'est l'étape lourde : on extrait les colonnes correspondant aux SNPs
-    geno_sub <- geno_mat[, valid_snps]
+    # 4. Nettoyage des NA résiduels (Transformation en 0)
+    # Si un SNP est valid_snps mais n'avait pas de score dans dt_wide, merge a mis NA
+    for (col in c(m1, m2)) {
+      # Utilisation de set() pour la rapidité (pas de copie mémoire)
+      set(dt_final, i = which(is.na(dt_final[[col]])), j = col, value = 0)
+    }
 
-    # Calcul de r^2 (Corrélation au carré)
-    # use="pairwise" gère les quelques NAs éventuels dans le génotypage
+    # --- C. Calcul de la Matrice de Coût (LD) ---
+    # Extraction des génotypes dans le MÊME ORDRE que dt_final
+    geno_sub <- geno_mat[, dt_final$SNP]
+
+    # Calcul de r² (Corrélation au carré)
+    # use = "pairwise" gère les données manquantes ponctuelles dans le génotype
     ld_matrix <- cor(geno_sub, use = "pairwise.complete.obs")^2
-    ld_matrix[is.na(ld_matrix)] <- 0 # Sécurité
 
-    # Distance = 1 - r^2
+    # Sécurité ultime : si variance nulle quelque part, cor renvoie NA
+    ld_matrix[is.na(ld_matrix)] <- 0
+
+    # Distance = 1 - r² (Proche = 0, Distant = 1)
     cost_matrix <- 1 - ld_matrix
 
-    # e. Normalisation des masses (Poids)
-    # On utilise abs() car l'EMD requiert des masses positives
-    w1 <- abs(dt_wide[[m1]])
-    w2 <- abs(dt_wide[[m2]])
+    # --- D. Préparation des Poids pour Wasserstein ---
+    w1 <- abs(dt_final[[m1]])
+    w2 <- abs(dt_final[[m2]])
 
-    # Normalisation pour sommer à 1
-    w1 <- w1 / sum(w1)
-    w2 <- w2 / sum(w2)
+    # Normalisation (Somme = 1)
+    # Cas limite : si une méthode a tous ses scores à 0 (improbable mais possible), distribution uniforme
+    sum_w1 <- sum(w1)
+    sum_w2 <- sum(w2)
 
-    # f. Calcul EMD (Transport Optimal)
-    # P = 1 pour la distance de Wasserstein standard
-    emd_val <- transport::wasserstein(w1, w2, costm = cost_matrix, p = 1)
+    if (sum_w1 == 0) w1 <- rep(1/length(w1), length(w1)) else w1 <- w1 / sum_w1
+    if (sum_w2 == 0) w2 <- rep(1/length(w2), length(w2)) else w2 <- w2 / sum_w2
 
-    # Stockage
-    results_list[[i]] <- data.table(
-      method1 = m1,
-      method2 = m2,
-      comparaison = paste(m1, "vs", m2),
-      emd_ld = emd_val,
-      n_snps_used = n_valid,
-      pct_snps_found = round((n_valid / n_original) * 100, 1)
-    )
+    # --- E. Calcul EMD ---
+    # p = 1 correspond à la distance "Earth Mover's" standard
+    tryCatch({
+      emd_val <- transport::wasserstein(w1, w2, costm = cost_matrix, p = 1)
 
-    # Nettoyage mémoire immédiat (Crucial pour la RAM)
-    rm(geno_sub, ld_matrix, cost_matrix, dt_wide)
-    gc(verbose = FALSE)
+      results_list[[i]] <- data.table(
+        method1 = m1,
+        method2 = m2,
+        comparaison = paste(m1, "vs", m2),
+        emd_ld = emd_val,
+        n_snps_union = length(valid_snps),
+        coverage_pct = round(length(valid_snps) / length(union_candidates) * 100, 1)
+      )
+    }, error = function(e) {
+      warning(paste("Erreur transport::wasserstein pour", m1, "vs", m2, ":", e$message))
+    })
 
-    # Update barre
+    # --- F. Nettoyage Mémoire (Optimisation) ---
+    # Suppression explicite des objets lourds
+    rm(geno_sub, ld_matrix, cost_matrix, dt_wide, dt_final, w1, w2)
+
+    # Garbage Collector "intelligent" : seulement toutes les 5 itérations pour ne pas ralentir
+    if (i %% 5 == 0) gc(verbose = FALSE)
+
     setTxtProgressBar(pb, i)
   }
 
   close(pb)
-  message("\n=== Calcul terminé ! ===")
+  message("\n=== Calcul terminé avec succès ===")
 
   return(rbindlist(results_list))
+}
+
+
+
+compute_multi_ld_emd_diffK <- function(
+    geno_mat,           # Matrice individus x SNPs (0/1/2) - colnames = SNP IDs
+    scores_dt,          # Data.table contenant les scores (SNP, phenotype, method_context, mean...)
+    phenotype_target,   # Phénotype cible
+    pairs_list,         # Liste de listes : list(list(m1=..., k1=..., m2=..., k2=...), ...)
+    score_col = "mean"  # Colonne utilisée pour le poids
+) {
+
+  # --- 1. Initialisation & contrôles ---
+  if (!phenotype_target %in% unique(scores_dt$phenotype)) {
+    stop(sprintf("Le phénotype '%s' est introuvable dans scores_dt.", phenotype_target))
+  }
+
+  dt_pheno <- scores_dt[phenotype == phenotype_target]
+  results_list <- vector("list", length(pairs_list))
+
+  message("\n=== ANALYSE LD-EMD (Top-K asymétriques, Génome entier) ===")
+  message(sprintf("Phénotype : %s | Comparaisons : %d", phenotype_target, length(pairs_list)))
+
+  pb <- txtProgressBar(min = 0, max = length(pairs_list), style = 3)
+
+  # --- 2. Boucle sur les paires ---
+  for (i in seq_along(pairs_list)) {
+
+    pair <- pairs_list[[i]]
+    m1 <- pair$m1; k1 <- pair$k1
+    m2 <- pair$m2; k2 <- pair$k2
+
+    # --- A. Sélection des Top-K spécifiques à chaque méthode ---
+    snps_m1 <- dt_pheno[method_context == m1][
+      order(-abs(get(score_col)))][1:min(k1, .N), SNP]
+
+    snps_m2 <- dt_pheno[method_context == m2][
+      order(-abs(get(score_col)))][1:min(k2, .N), SNP]
+
+    # Union génome entier
+    union_candidates <- unique(c(snps_m1, snps_m2))
+    valid_snps <- intersect(union_candidates, colnames(geno_mat))
+
+    if (length(valid_snps) < 10) {
+      warning(sprintf("Paire %s vs %s ignorée : < 10 SNPs valides.", m1, m2))
+      setTxtProgressBar(pb, i)
+      next
+    }
+
+    # --- B. Construction de la table de poids ---
+    dt_subset <- dt_pheno[
+      SNP %in% valid_snps & method_context %in% c(m1, m2)
+    ]
+
+    dt_wide <- dcast(
+      dt_subset, SNP ~ method_context,
+      value.var = score_col, fill = 0
+    )
+
+    dt_final <- merge(
+      data.table(SNP = valid_snps),
+      dt_wide, by = "SNP", all.x = TRUE
+    )
+
+    for (col in c(m1, m2)) {
+      set(dt_final, i = which(is.na(dt_final[[col]])), j = col, value = 0)
+    }
+
+    # --- C. Matrice de coût LD globale ---
+    geno_sub <- geno_mat[, dt_final$SNP]
+    ld_matrix <- cor(geno_sub, use = "pairwise.complete.obs")^2
+    ld_matrix[is.na(ld_matrix)] <- 0
+    cost_matrix <- 1 - ld_matrix
+
+    # --- D. Poids normalisés ---
+    w1 <- abs(dt_final[[m1]])
+    w2 <- abs(dt_final[[m2]])
+
+    if (sum(w1) == 0) w1 <- rep(1 / length(w1), length(w1)) else w1 <- w1 / sum(w1)
+    if (sum(w2) == 0) w2 <- rep(1 / length(w2), length(w2)) else w2 <- w2 / sum(w2)
+
+    # --- E. Wasserstein ---
+    tryCatch({
+      emd_val <- transport::wasserstein(w1, w2, costm = cost_matrix, p = 1)
+
+      results_list[[i]] <- data.table(
+        method1 = m1,
+        k1 = k1,
+        method2 = m2,
+        k2 = k2,
+        comparaison = sprintf("%s(%d) vs %s(%d)", m1, k1, m2, k2),
+        emd_ld = emd_val,
+        n_snps_union = length(valid_snps),
+        coverage_m1 = round(length(intersect(snps_m1, valid_snps)) / k1 * 100, 1),
+        coverage_m2 = round(length(intersect(snps_m2, valid_snps)) / k2 * 100, 1)
+      )
+    }, error = function(e) {
+      warning(sprintf("Erreur EMD pour %s vs %s : %s", m1, m2, e$message))
+    })
+
+    rm(geno_sub, ld_matrix, cost_matrix, dt_wide, dt_final, w1, w2)
+    if (i %% 3 == 0) gc(verbose = FALSE)
+
+    setTxtProgressBar(pb, i)
+  }
+
+  close(pb)
+  message("\n=== Calcul terminé ===")
+
+  return(rbindlist(results_list, fill = TRUE))
+}
+
+############################################################## emd ld chromosome ####################
+
+compute_multi_ld_emd_by_chr <- function(
+    geno_mat,           # Matrice individus x SNPs (colnames = SNP IDs)
+    scores_dt,          # Data.table avec colonnes SNP, chrom_num, method_context, etc.
+    phenotype_target,   # Phénotype cible
+    pairs_list,         # Liste des paires : list(c("M1","M2"), ...)
+    top_k_per_chr = 500,# Nombre de SNPs à prendre par CHR et par MÉTHODE
+    score_col = "mean"  # Colonne d'importance
+) {
+
+  # --- 1. Initialisation ---
+  if (!phenotype_target %in% unique(scores_dt$phenotype)) {
+    stop(sprintf("Le phénotype '%s' est introuvable.", phenotype_target))
+  }
+
+  dt_pheno <- scores_dt[phenotype == phenotype_target]
+  all_chrs <- sort(unique(dt_pheno$chrom_num))
+  results_list <- list()
+
+  message(sprintf("\n=== ANALYSE LD-EMD PAR CHROMOSOME ==="))
+  message(sprintf("Phénotype : %s | Top K/Chr : %d", phenotype_target, top_k_per_chr))
+
+  # --- 2. Boucle sur les paires ---
+  for (pair in pairs_list) {
+    m1 <- pair[1]
+    m2 <- pair[2]
+    message(sprintf("-> Comparaison : %s vs %s", m1, m2))
+
+    # --- 3. Boucle sur les Chromosomes ---
+    for (chr in all_chrs) {
+
+      # a. Sélection du Top K spécifique au chromosome pour chaque méthode
+      snps_m1 <- dt_pheno[method_context == m1 & chrom_num == chr][
+        order(-abs(get(score_col)))][1:min(top_k_per_chr, .N), SNP]
+
+      snps_m2 <- dt_pheno[method_context == m2 & chrom_num == chr][
+        order(-abs(get(score_col)))][1:min(top_k_per_chr, .N), SNP]
+
+      # b. Union et validation contre la matrice de génotype
+      union_snps <- unique(c(snps_m1, snps_m2))
+      valid_snps <- intersect(union_snps, colnames(geno_mat))
+
+      if (length(valid_snps) < 10) next # Trop peu de signal sur ce chr
+
+      # c. Préparation des poids (Alignement)
+      dt_subset <- dt_pheno[SNP %in% valid_snps & method_context %in% c(m1, m2)]
+      dt_wide <- dcast(dt_subset, SNP ~ method_context, value.var = score_col, fill = 0)
+
+      # Alignement strict sur l'ordre des SNPs
+      dt_final <- merge(data.table(SNP = valid_snps), dt_wide, by = "SNP", all.x = TRUE)
+      for (col in c(m1, m2)) set(dt_final, i = which(is.na(dt_final[[col]])), j = col, value = 0)
+
+      # d. Calcul du coût de transport (LD locale)
+      geno_sub <- geno_mat[, dt_final$SNP]
+      ld_matrix <- cor(geno_sub, use = "pairwise.complete.obs")^2
+      ld_matrix[is.na(ld_matrix)] <- 0
+      cost_matrix <- 1 - ld_matrix
+
+      # e. Normalisation des masses
+      w1 <- abs(dt_final[[m1]])
+      w2 <- abs(dt_final[[m2]])
+
+      if (sum(w1) == 0) w1 <- rep(1/length(w1), length(w1)) else w1 <- w1 / sum(w1)
+      if (sum(w2) == 0) w2 <- rep(1/length(w2), length(w2)) else w2 <- w2 / sum(w2)
+
+      # f. Calcul EMD
+      try({
+        emd_val <- transport::wasserstein(w1, w2, costm = cost_matrix, p = 1)
+
+        results_list[[length(results_list) + 1]] <- data.table(
+          method1 = m1,
+          method2 = m2,
+          chrom_num = chr,
+          emd_ld = emd_val,
+          n_snps = length(valid_snps)
+        )
+      }, silent = TRUE)
+    }
+    # Nettoyage entre paires
+    gc(verbose = FALSE)
+  }
+
+  return(rbindlist(results_list))
+}
+
+
+
+compute_multi_ld_emd_by_chr_kdependant <- function(
+    geno_mat,
+    scores_dt,
+    phenotype_target,
+    pairs_list,         # Liste de listes : list(list(m1="M1", k1=50, m2="M2", k2=5000), ...)
+    score_col = "mean"
+) {
+
+  # 1. Pré-filtrage global par phénotype et SNPs valides
+  dt_pheno <- scores_dt[
+    phenotype == phenotype_target &
+      SNP %in% colnames(geno_mat),
+    .(SNP, chrom_num, pos, method_context, score_val = get(score_col))
+  ]
+
+  # On s'assure que les scores sont positifs (seuil à zéro)
+  dt_pheno[, score_val := pmax(score_val, 0)]
+
+  all_results <- list()
+
+  for (i in seq_along(pairs_list)) {
+    p <- pairs_list[[i]]
+    m1 <- p$m1; k1 <- p$k1
+    m2 <- p$m2; k2 <- p$k2
+    pair_label <- paste0(m1, " (k=", k1, ") vs ", m2, " (k=", k2, ")")
+
+    message("Calcul : ", pair_label)
+
+    # 2. Sélection des Top K SNPs pour chaque méthode (à l'échelle du génome entier)
+    top_m1 <- dt_pheno[method_context == m1][order(-score_val)][1:min(.N, k1)]$SNP
+    top_m2 <- dt_pheno[method_context == m2][order(-score_val)][1:min(.N, k2)]$SNP
+
+    # 3. Filtrage des données pour cette paire
+    dt_pair <- dt_pheno[SNP %in% union(top_m1, top_m2) & method_context %in% c(m1, m2)]
+
+    # 4. Calcul de l'EMD par chromosome
+    res_pair <- dt_pair[, {
+      # Pivot local
+      dt_w <- dcast(.SD, SNP + pos ~ method_context, value.var = "score_val", fill = 0)
+      setnames(dt_w, c(m1, m2), c("s1", "s2"))
+
+      # Si une méthode n'a aucun SNP dans le top K sur ce chromosome précis
+      if (sum(dt_w$s1) <= 0 || sum(dt_w$s2) <= 0 || .N < 2) {
+        .(emd_ld = as.numeric(NA))
+      } else {
+        # Masses
+        w1 <- dt_w$s1 / sum(dt_w$s1)
+        w2 <- dt_w$s2 / sum(dt_w$s2)
+
+        # Matrice de coût LD (1-r²)
+        geno_win <- geno_mat[, dt_w$SNP, drop = FALSE]
+        cost_matrix <- 1 - (cor(geno_win, use = "pairwise.complete.obs")^2)
+        cost_matrix[is.na(cost_matrix)] <- 1 # Cas sans variance
+
+        # Transport Optimal
+        val <- tryCatch({
+          transport::wasserstein(w1, w2, costm = cost_matrix, p = 1)
+        }, error = function(e) as.numeric(NA))
+
+        .(emd_ld = val)
+      }
+    }, by = .(chrom_num)]
+
+    res_pair[, comparaison := pair_label]
+    all_results[[i]] <- res_pair
+  }
+
+  return(rbindlist(all_results)[!is.na(emd_ld)])
+}
+
+
+
+plot_ld_emd_barplot_chr <- function(dt_chr, title_label = "") {
+
+  # --- Sécurité : Copie locale ---
+  dt_plot <- copy(dt_chr)
+
+  # --- Ajustement des colonnes ---
+  if(!"emd" %in% names(dt_plot) & "emd_ld" %in% names(dt_plot)) {
+    setnames(dt_plot, "emd_ld", "emd")
+  }
+
+  if(!"comparaison" %in% names(dt_plot)) {
+    dt_plot[, comparaison := paste(method1, "vs", method2)]
+  }
+
+  # --- Préparation des facteurs ---
+  dt_plot[, chrom_num := factor(chrom_num, levels = sort(as.numeric(unique(chrom_num))))]
+  dt_plot[, comparaison := factor(comparaison, levels = unique(comparaison))]
+
+  # --- Graphique ---
+  ggplot(dt_plot, aes(x = chrom_num, y = emd, fill = emd)) +
+    geom_bar(stat = "identity", color = "white", linewidth = 0.2) +
+
+    # Facettage par comparaison (une ligne par paire de méthodes)
+    facet_wrap(~ comparaison, ncol = 1) +
+
+    # Échelle de couleur FIXÉE (0 = Haplotypes identiques, 1 = Haplotypes différents)
+    scale_fill_gradientn(
+      colors = c("#4575b4", "#abd9e9", "#fee090", "#f46d43", "#d73027"),
+      name = "Divergence\n(LD-EMD)",
+      limits = c(0, 0.75),
+      oob = scales::squish
+    ) +
+
+    # On fixe l'axe Y pour une comparaison visuelle directe
+    coord_cartesian(ylim = c(0, 0.75)) +
+
+    theme_minimal() +
+    theme(
+      strip.text = element_text(face = "bold", size = 10, colour = "grey20"),
+      axis.text.x = element_text(size = 9),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      legend.position = "right"
+    ) +
+    labs(
+      title = paste("Divergence Structurelle par Chromosome (LD)", title_label),
+      subtitle = "Coût basé sur le déséquilibre de liaison (1 - r²)",
+      x = "Numéro du Chromosome",
+      y = "EMD-LD (Normalisée)",
+      caption = "Une valeur proche de 0 indique que les deux méthodes pointent vers les mêmes blocs de LD."
+    )
+}
+
+####################################### LD par fenètre en pdb ###########################
+compute_emd_ld_by_window <- function(
+    geno_mat,           # Matrice individus x SNPs (colnames = SNP IDs)
+    dt,                 # Data.table avec SNP, chrom_num, pos, method_context, etc.
+    phenotype_target,
+    pairs_list,         # Liste de paires : list(c("M1", "M2"), ...)
+    window_bp = 1e6,    # Taille fenêtre (ex: 1 Mb)
+    score_col = "mean"
+) {
+
+  # --- 1. Pré-filtrage global ---
+  # On ne garde que le phénotype et les SNPs présents dans le génotype pour tout le calcul
+  dt_pheno <- dt[
+    phenotype == phenotype_target &
+      SNP %in% colnames(geno_mat),
+    .(SNP, chrom_num, pos, method_context, score_val = get(score_col))
+  ]
+
+  if (nrow(dt_pheno) == 0) stop("Aucune donnée trouvée pour ce phénotype ou SNPs absents de geno_mat.")
+
+  all_results <- list()
+
+  message(sprintf("\n=== ANALYSE LD-EMD MULTI-PAIRES [%s] ===", phenotype_target))
+
+  # --- 2. Boucle sur les paires de méthodes ---
+  for (i in seq_along(pairs_list)) {
+
+    m1 <- pairs_list[[i]][1]
+    m2 <- pairs_list[[i]][2]
+    pair_name <- paste(m1, "vs", m2)
+
+    message(sprintf("Calcul en cours (%d/%d) : %s", i, length(pairs_list), pair_name))
+
+    # Sous-ensemble pour les deux méthodes de la paire
+    dt_pair <- dt_pheno[method_context %in% c(m1, m2)]
+
+    # Création de l'ID fenêtre
+    dt_pair[, window_id := floor(pos / window_bp)]
+
+    # Pivot (Format Large)
+    dt_wide <- dcast(
+      dt_pair,
+      SNP + chrom_num + pos + window_id ~ method_context,
+      value.var = "score_val",
+      fill = 0
+    )
+
+    # Sécurité : vérifier que les colonnes existent bien après le dcast
+    if (!m1 %in% names(dt_wide)) dt_wide[[m1]] <- 0
+    if (!m2 %in% names(dt_wide)) dt_wide[[m2]] <- 0
+
+    setnames(dt_wide, c(m1, m2), c("score1", "score2"))
+
+    # --- 3. Calcul par groupe (Chromosome + Fenêtre) ---
+    res_pair <- dt_wide[, {
+
+      if (.N < 2) {
+        .(emd_ld = as.numeric(NA), n_snps = .N, mid_pos = pos[1])
+      } else {
+        # Masses normalisées
+        w1 <- abs(score1); if(sum(w1) > 0) w1 <- w1 / sum(w1) else w1 <- rep(1/.N, .N)
+        w2 <- abs(score2); if(sum(w2) > 0) w2 <- w2 / sum(w2) else w2 <- rep(1/.N, .N)
+
+        # Coût (LD locale)
+        geno_win <- geno_mat[, SNP]
+        ld_matrix <- cor(geno_win, use = "pairwise.complete.obs")^2
+        ld_matrix[is.na(ld_matrix)] <- 0
+        cost_matrix <- 1 - ld_matrix
+
+        # EMD
+        val <- tryCatch({
+          transport::wasserstein(w1, w2, costm = cost_matrix, p = 1)
+        }, error = function(e) as.numeric(NA))
+
+        .(
+          emd_ld = val,
+          n_snps = .N,
+          mid_pos = (window_id[1] * window_bp) + (window_bp / 2)
+        )
+      }
+    }, by = .(chrom_num, window_id)]
+
+    # Ajout des métadonnées de la paire
+    res_pair[, `:=`(
+      method1 = m1,
+      method2 = m2,
+      pair = pair_name
+    )]
+
+    all_results[[i]] <- res_pair[!is.na(emd_ld)]
+
+    # Nettoyage mémoire entre les paires
+    rm(dt_pair, dt_wide, res_pair); gc(verbose = FALSE)
+  }
+
+  message("=== Analyse multi-paires terminée ===")
+  return(rbindlist(all_results))
+}
+
+
+plot_emd_ld_window_profile <- function(dt_emd, window_label = "") {
+
+  # 1. Sécurité : Création de la colonne pair
+  if (!"pair" %in% names(dt_emd) & all(c("method1", "method2") %in% names(dt_emd))) {
+    dt_emd[, pair := paste(method1, "vs", method2)]
+  }
+
+  # 2. Nettoyage : On ne garde que les groupes ayant au moins 2 fenêtres
+  # pour éviter l'erreur "Each group consists of only one observation"
+  dt_plot <- dt_emd[, if (.N >= 2) .SD, by = .(pair, chrom_num)]
+
+  # Si jamais il y a des points isolés qu'on veut quand même voir :
+  dt_isolated <- dt_emd[, if (.N < 2) .SD, by = .(pair, chrom_num)]
+
+  p <- ggplot(dt_plot, aes(x = mid_pos / 1e6, y = emd_ld)) +
+    annotate(
+      "rect",
+      xmin = -Inf, xmax = Inf, ymin = 0.7, ymax = Inf,
+      fill = "firebrick3", alpha = 0.05
+    ) +
+
+    # Dessine l'escalier uniquement là où il y a au moins 2 points
+    geom_step(
+      aes(group = interaction(pair, chrom_num)),
+      linewidth = 0.4, color = "grey40", alpha = 0.6
+    ) +
+
+    # On ajoute les points de TOUTES les données (même isolées)
+    geom_point(data = dt_emd, aes(color = emd_ld), size = 1.2) +
+
+    facet_grid(pair ~ chrom_num, scales = "free_x", space = "free_x") +
+
+    scale_color_gradientn(
+      colors = c("darkturquoise", "grey90", "orange", "firebrick3"),
+      values = c(0, 0.3, 0.7, 1),
+      name = "Divergence\n(EMD-LD)"
+    ) +
+
+    geom_hline(yintercept = 0, linewidth = 0.3, color = "darkturquoise") +
+
+    theme_minimal() +
+    theme(
+      strip.text.y = element_text(angle = 0, size = 7, face = "bold"),
+      strip.text.x = element_text(size = 9, face = "bold"),
+      panel.grid.minor = element_blank(),
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      legend.position = "bottom"
+    ) +
+    labs(
+      title = sprintf("Profil de divergence génomique – EMD LD (%s)", window_label),
+      subtitle = "Consensus local (bleu) vs divergence structurelle/haplotypique (rouge)",
+      x = "Position génomique (Mb)",
+      y = "Distance de Wasserstein (LD-based)",
+      caption = "L'EMD-LD mesure le coût de transport basé sur 1-r². Les segments représentent la continuité des fenêtres."
+    )
+
+  return(p)
 }

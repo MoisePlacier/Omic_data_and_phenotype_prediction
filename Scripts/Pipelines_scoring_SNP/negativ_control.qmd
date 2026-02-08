@@ -74,7 +74,6 @@ h2_target <- 0.5   # Le bruit représente 50 % de variance populationnelle cf R^
 
 $$ h^2 = \frac{\sigma_g^2}{\sigma_g^2 + \sigma_e^2} \qquad <=> \qquad\sigma_e^2 = \sigma_g^2 \frac{1 - h^2}{h^2}$$
 
-
 ```{r}
 sigma_e2 <- var_g * (1 - h2_target) / h2_target
 sigma_e  <- sqrt(sigma_e2)
@@ -100,7 +99,7 @@ Pour un individu $i$ appartenant à la population $j$, le phénotype simulé $Y_
 
 $$Y_{ij} = \beta_{j} + \epsilon_{ij}$$
 
-$*\beta_{j} \sim \mathcal{N}(0, \sigma_{pop}^2)$ $\epsilon_{ij} \sim \mathcal{N}(0, \sigma_{e}^2)$*
+$*\beta_{j} \sim \mathcal{N}(0, \sigma_{pop}^2)$ $\epsilon_{ij} \sim \mathcal{N}(0, \sigma_{e}^2)$\*
 
 ```{r}
 Loc_FILE <- "../data/localisation.rda"
@@ -197,14 +196,11 @@ pheno_all[, ID := rownames(Genomic)]
 
 ## SVD de la matrice SNP
 
-
-
 ```{r}
 variances <- apply(geno, 2, var, na.rm = TRUE)
 
 cols_to_keep <- which(variances > 0 & !is.na(variances))
 ```
-
 
 ```{r}
 geno_filtered <- geno[, ..cols_to_keep]
@@ -221,7 +217,6 @@ dim(geno_scaled)
 res_svd <- svd(geno_scaled)
 ```
 
-
 ```{r}
 U <- res_svd$u %*% diag(res_svd$d)
 ```
@@ -229,7 +224,6 @@ U <- res_svd$u %*% diag(res_svd$d)
 ```{r}
 dim(U)
 ```
-
 
 ```{r}
 library(sommer)
@@ -259,7 +253,6 @@ mod <- mmer(fixed = as.formula(paste("BrAnglVert", "~ Population + PC1 + PC2 + P
 ```{r}
 summary(mod)
 ```
-
 
 ```{r}
 
@@ -300,6 +293,7 @@ Y_mixed_residuals$ID <- df_mixed$ID
 # Sauvegarde
 saveRDS(Y_mixed_residuals, "../data/LMM_Residuals_Kinship_Pop.rds")
 ```
+
 ```{r}
 get_model_stats_robust <- function(var, data, K_mat) {
   message("Analyse statistique de : ", var)
@@ -346,10 +340,10 @@ summary_table <- do.call(rbind, stats_list)
 
 print(summary_table)
 ```
+
 ```{r}
 head(summary_table)
 ```
-
 
 ```{r}
 Y_mixed_residuals
@@ -442,7 +436,7 @@ ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
 
 Mince ! Lorsque l'on créé un phénotype avec 50% de variance expliquée par la kinship, le modèle simple LM (phéno kinship \~ Population) à un R\^2 très faible (0.1)... Cela signifie que la corrélation entre les catégories Population et Kinship sont plutot faible finalement ...
 
-## LM pheno ~ PC mat snp
+## LM pheno \~ PC mat snp
 
 ```{r}
 library(data.table)
@@ -489,4 +483,3 @@ ggplot(r2_values, aes(x = reorder(phenotype, r2), y = r2)) +
   ) +
   theme_minimal()
 ```
-

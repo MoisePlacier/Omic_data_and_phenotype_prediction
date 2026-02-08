@@ -48,8 +48,6 @@ unique(all_scores_dt$context)
 unique(all_scores_dt$method)
 ```
 
-
-
 ```{r}
 phenos_run   <- c("BudFlushSlope",
                   "HT2009",
@@ -64,7 +62,7 @@ methods_run  <- c("RF","VIP","FarmCPU","MLM")            # méthodes à évaluer
 contexts_run <- c( "residuals","phenotype","GWAS","LMM_residuals")    # contextes
 ```
 
-# Ridge 
+# Ridge
 
 ```{r message=TRUE}
 ridge_perf <- run_model_from_scores(
@@ -87,7 +85,6 @@ ridge_perf <- run_model_from_scores(
 ```{r}
 ridge_perf
 ```
-
 
 ```{r}
 
@@ -171,7 +168,9 @@ ggplot(ridge_perf, aes(x = method_context, y = R2, fill = context)) +
   scale_fill_brewer(palette = "Set2")
 
 ```
-# RF 
+
+# RF
+
 ```{r}
 rf_grid <- data.table(
   num.trees = c(50,200, 500,1000),
@@ -247,7 +246,7 @@ ggplot(rf_perf, aes(x = method_context, y = R2, fill = context)) +
 
 ```
 
-# Ridge hybrid  
+# Ridge hybrid
 
 ```{r}
 hybrid_perf <- run_hybrid_pipeline(
@@ -260,6 +259,7 @@ hybrid_perf <- run_hybrid_pipeline(
   method_rf = "RF", context_rf = "LMM_residuals"
 )
 ```
+
 ```{r}
 full_comparison_dt <- rbindlist(list(ridge_perf, hybrid_perf), fill = TRUE)
 
@@ -334,6 +334,7 @@ ggplot(plot_df, aes(x = reorder(method_label, R2, FUN = median), y = R2, fill = 
     panel.spacing = unit(1, "lines")
   )
 ```
+
 # RF Hybride
 
 ```{r}
@@ -355,7 +356,13 @@ rf_hybrid_res <- run_rf_hybrid_pipeline(
 
 ```{r}
 final_dt <- rbindlist(list(ridge_perf, hybrid_perf, rf_perf, rf_hybrid_res), fill = TRUE)
+```
 
+```{r}
+final_dt
+```
+
+```{r}
 # 3. Label de stratégie pour le plot
 final_dt[, strategy := "Simple"]
 final_dt[method == "Hybrid_Fusion", strategy := "Hybrid (GWAS+RF)"]
@@ -363,7 +370,7 @@ final_dt[method %like% "Random", strategy := "Control"]
 ```
 
 ```{r}
-
+final_dt <- readRDS("~/Code/ACO-CODE_phenotypique /PoplarOmicsORL/Scripts/results/benchmarks/full_res_top5000.rds")
 # 1. Nettoyage et ordonnancement pour un affichage logique
 plot_final_dt <- copy(final_dt)
 
@@ -371,9 +378,7 @@ plot_final_dt <- copy(final_dt)
 plot_final_dt[model == "ridge", model_label := "RIDGE (Linéaire)"]
 plot_final_dt[model == "RF", model_label := "RF (Non-linéaire)"]
 
-# Ordre des stratégies pour l'axe X
-plot_final_dt[, strategy := factor(strategy, levels = c("Control", "Simple", "Hybrid (GWAS+RF)"))]
-# On s'assure que 'model' est bien rempli selon la nature des données
+
 plot_final_dt[!is.na(lambda_opt), model := "ridge"]
 plot_final_dt[!is.na(num.trees), model := "RF"]
 
@@ -384,8 +389,7 @@ plot_final_dt[model == "RF", model_label := "RF (Non-linéaire)"]
 # On vérifie qu'il n'y a plus de NA dans model_label
 # sum(is.na(plot_final_dt$model_label)) 
 
-# On s'assure que l'ordre des stratégies est le bon pour le plot
-plot_final_dt[, strategy := factor(strategy, levels = c("Control", "Simple", "Hybrid (GWAS+RF)"))]
+
 ```
 
 ```{r}
@@ -393,16 +397,16 @@ library(ggplot2)
 
 # Recalcul des médianes pour les étiquettes
 med_final <- plot_final_dt[!is.na(model_label), .(R2_median = median(R2, na.rm = TRUE)), 
-                           by = .(phenotype, model_label, strategy)]
+                           by = .(phenotype, model_label)]
 
-ggplot(plot_final_dt[!is.na(model_label)], aes(x = strategy, y = R2, fill = strategy)) +
+ggplot(plot_final_dt[!is.na(model_label)], aes(x = model, y = R2, fill = model)) +
   geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
   geom_jitter(width = 0.1, alpha = 0.15, size = 0.4) +
   
   # Médianes textuelles
   geom_text(
     data = med_final,
-    aes(x = strategy, y = R2_median, label = sprintf("%.2f", R2_median)),
+    aes(x = model, y = R2_median, label = sprintf("%.2f", R2_median)),
     vjust = -1.2, size = 2.5, fontface = "bold", inherit.aes = FALSE
   ) +
   
@@ -411,8 +415,8 @@ ggplot(plot_final_dt[!is.na(model_label)], aes(x = strategy, y = R2, fill = stra
   
   scale_fill_manual(values = c(
     "Control" = "#A9A9A9",          # Gris
-    "Simple" = "#56B4E9",           # Bleu
-    "Hybrid (GWAS+RF)" = "#E69F00"  # Orange
+    "Simple" = "#56B4E9"          # Bleu
+    #"Hybrid (GWAS+RF)" = "#E69F00"  # Orange
   )) +
   
   theme_minimal() +
@@ -420,8 +424,7 @@ ggplot(plot_final_dt[!is.na(model_label)], aes(x = strategy, y = R2, fill = stra
     title = "Benchmark Final : Intégration de la Complexité Génomique",
     subtitle = "Comparaison Ridge vs RF sur méthodes Simples, Hybrides et Aléatoires",
     x = "Stratégie de Sélection (Top 500 SNPs)",
-    y = expression(R^2 ~ "(Variance Expliquée)"),
-    fill = "Stratégie"
+    y = expression(R^2 ~ "(Variance Expliquée)")
   ) +
   theme(
     strip.text.x = element_text(face = "bold", size = 7),
@@ -433,8 +436,6 @@ ggplot(plot_final_dt[!is.na(model_label)], aes(x = strategy, y = R2, fill = stra
   )
 ```
 
-
-
 # Comparaison Ridge et RF
 
 ```{r}
@@ -444,7 +445,6 @@ rf_perf_sub    <- rf_perf[method_context %in% c( "RF_LMM_residuals","FarmCPU_GWA
 ridge_perf_sub
 rf_perf_sub
 ```
-
 
 ```{r}
 ridge_perf_sub[, model := "Ridge"]

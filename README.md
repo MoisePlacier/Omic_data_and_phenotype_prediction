@@ -1,1 +1,444 @@
-# Omic_data_and_phenotype_prediction
+# Title: Phenotype Prediction in Populus nigra using Various Genomic Variable Selection Approaches
+
+# Authors: 
+Moïse Placier & Fabrice Traore
+(In collaboration with the INRAE BioForA Unit)
+
+# Abstract:
+
+Understanding the adaptive mechanisms of forest trees, particularly the black poplar (Populus nigra), is a major challenge in the context of climate change. While multi-omics integration offers a comprehensive view of biological systems, the high dimensionality of such data often hinders the identification of causal variants and leads to overfitting in predictive models. Building upon previous work by the BioForA unit (INRAE), this study evaluates different genomic variable selection strategies to optimize phenotype prediction. Using a dataset of 199 Populus nigra individuals characterized by strong population structure ($P$) and kinship ($K$), we compared three selection procedures: the standard Mixed Linear Model (MLM), the iterative FarmCPU algorithm, and a novel approach based on Random Forest importance scores calculated on structural residuals.
+
+Predictive performance was assessed using Ridge Regression and Random Forest models on traits with varying genetic architectures (Branch Insertion Angle, Circumference, and a simulated Null phenotype). Furthermore, we introduced a metric based on the Earth Mover’s Distance (EMD) to quantify the divergence and orthogonality of the genomic signals detected by each method, accounting for Linkage Disequilibrium (LD).
+
+Our results demonstrate that the efficacy of variable selection is highly dependent on the trait's genetic architecture. FarmCPU proved to be remarkably parsimonious, achieving high predictive accuracy ($R^2$) with only 50 SNPs for oligogenic traits (Angle), where it captured signal orthogonal to the population structure. Conversely, for traits strongly correlated with geography (Circumference), random selection performed surprisingly well, highlighting the pervasive confounding effect of demographic structure. The EMD analysis revealed that while MLM and Random Forest often converge on similar, structure-laden genomic regions, FarmCPU identifies distinct loci. These findings underscore the necessity of a rigorous selection step upstream of genomic prediction to distinguish true biological adaptation from structural noise.
+
+# Keywords: 
+Genomic Prediction, Populus nigra, Variable Selection, FarmCPU, Random Forest, Earth Mover’s Distance (EMD), Population Structure.
+
+# Introduction
+
+Notre travail a été réalisé en partenariat avec l'unité [BioForA](https://biofora.val-de-loire.hub.inrae.fr/) (Biologie intégrée pour la valorisation de la diversité des arbres et de la forêt) du centre INRAE Val de Loire. Il prend place dans la continuité directe des travaux de thèse menés par Alexandre Duplan, sous l'encadrement de Harold Duruflé et Leopoldo Sanchez-Rodriguez. Le projet vise à comprendre les mécanismes d'adaptation des arbres forestiers, spécifiquement le peuplier noir (Populus nigra), face aux changements environnementaux.
+
+Pour ce faire, nous exploitons des données multi-omiques (génomique, épigénomique, transcriptomique) issues des projets [ANR SYBIOPOP](https://anr.fr/Projet-ANR-13-JSV6-0001) et [EPITREE](https://epitree-project.hub.inrae.fr/). L'objectif de notre travail est de construire des modèles capables de prédire des traits phénotypiques complexes (croissance, phénologie, résistance aux maladies) à partir des données génomiques.
+
+## L'héritage méthodologique
+
+Les travaux conduits précédemment au sein de l’unité ont permis la constitution et la curation d'un jeu de données de référence regroupant 199 individus de peupliers noirs (Populus nigra). Sur cette base, les recherches d'Alexandre Duplan ont exploré diverses stratégies de modélisation pour la prédiction de caractères complexes à partir de données multi-omiques. Sa méthodologie repose sur une intégration précoce (early integration) consistant en la concaténation des différentes couches omiques, traitées ensuite par des algorithmes de régression Ridge ou de Random Forest. Ce choix technique permet d'appréhender le système biologique de manière unifiée, en traitant l'ensemble des l'information sur le même plan.
+
+Néanmoins, cette approche augmente considérablement la dimensionnalité du jeu de données, soulevant plusieurs défis méthodologiques. Premièrement, l'hétérogénéité du nombre de variables entre les couches omiques induit un déséquilibre structurel : les couches les plus denses (nottament les 3 contextes épigénétiques) surreprésentent l'information, biaisant ainsi la contribution relative de chaque niveau omique au sein du modèle. Deuxièmement, l'augmentation du nombre de variables complexifie l’interprétation des résultats. La présence de variables non informatives, sans lien biologique avec le caractère étudié, dilue le signal causal. Cela rend difficile l'identification précise des locus d’intérêt ainsi que la quantification de la part de variance expliquée par ces derniers.
+
+Pour pallier ces limites, Alexandre Duplan a développé un filtre de sélection de variables visant à ne conserver que les marqueurs les plus informatifs de chaque couche. Dans cette optique de réduction de dimension, il a mis en œuvre un modèle mixte multi-locus (MLMM), qui est une approche de GWAS (Genome-Wide Association Study), afin d'évaluer l'association statistique de chaque SNP un enssemble de variables : environemmentales, phénotypes et autres. En sélectionnant les marqueurs présentant les p-values les plus significatives (inférieures à un seuil défini), il a pu isoler un ensemble de 31 754 SNPs associés de manière significative aux différents caractères, réduisant ainsi la dimensionalité du jeu de donné génomique avant l'étape d'intégration.
+
+Cette stratégie de filtrage à eu un effet variable sur les performances de prédictions des différents phénotypes : tantôt positif, tantôt négatif. Alexandre Duplan suggère que ce filtre à pu éliminer du bruit, mais également des variables explicatives réelles, ce qui s'est traduit parfois par une dégradation des performances du modèle. Les analyses comparatives ont également révélé un résultat contre-intuitif; la performance prédictive obtenue à partir d'un sous-ensemble de marqueurs génomique de même taille mais sélectionnés aléatoirement s'avère équivalente à celle obtenue via une sélection ciblée par MLMM/GWAS.
+
+## Objectifs de l'étude
+
+S'inscrivant dans la continuité des travaux d'Alexandre Duplan, cette étude explore différentes stratégies de sélection de variables afin d'optimiser la précision des modèles de prédiction phénotypique à partir de données génomiques.Notre ambition est d'augmenter les performances prédictives. 
+
+Dans un premier temps, nous évaluerons l'efficacité d'approches de sélection linéaires, à savoir les modèles MLM et FarmCPU. Dans un second temps, nous présenterons une procédure de sélection alternative, fondée sur les scores d'importance issus de l'algorithme Random Forest.
+
+# Matériel et méthodes
+Nos méthodes et nos données 
+
+## Structure des données génomiques et hypothèses de modélisation
+les données
+
+### Structure des populations de Populus nigra
+
+L'échantillonnage de l'étude repose sur 199 individus de Populus nigra, issus de 11 populations naturelles distribuées le long de différents bassins versants européens.Le peuplier noir étant une espèce ripisylve, son écologie est intrinsèquement liée à la dynamique des cours d'eau. Cette dépendance aux réseaux hydrographiques limite les flux de gènes entre les différentes populations. En raison de cet isolement géographique, chaque bassin versant fonctionne comme une unité évolutive distincte où la dérive génétique et l'adaptation locale s'exercent de manière isolée. Il en résulte une forte différenciation génétique inter-population, que l'on observe très clairement sur l'Analyse en Composantes Principales (ACP). 
+
+![structure des populations de Populus nigra](Plot/Structure_pop.png){ width=80% }
+
+L’ACP réalisée sur les 217 000 SNPs met en évidence un regroupement net des individus par population, une séparation marquée selon les deux premiers axes, et une forte colinéarité entre géographie et génotypes.
+Ces résultats confirment que la structure de population (P) constitue la première source de variance génétique. Cela signifie que, la proximité génétique entre deux arbres reflète également leur proximité géographique.
+
+### La structure de parenté (Matrice K)
+Au-delà de la structuration globale entre les bassins versants, il existe un autre niveau de structure à l'échelle locale. Pour la capturer, nous utilisons une matrice de parenté (K), ou Kinship matrix. Cette matrice permet de capturer les relations d'apparentement entres individus. 
+
+La prise en compte de cette double structuration (P + K) est necessaire afin d'éviter tous biais de confusion. En effet, un SNP pourrait être déclaré statistiquement significatif alors qu'il n'est qu'un simple marqueur de l'origine géographique ou familiale de l'arbre, sans lien biologique fonctionnel avec le phénotype.
+
+### Déséquilibre de Liaison (LD) 
+Enfin, Le génome du peuplier présente des blocs d’haplotypes, au sein desquels les SNPs sont fortement corrélés (LD). Un haplotype est un ensemble de variations génétiques héritées ensemble en raison de leur proximité sur le chromosome. Il peut inclure des gènes ou des régions du génome qui influencent des traits quantitatifs, ces régions étant appelées QTLs (Quantitative Trait Loci).
+
+Cette architecture génétique est une lame à double tranchant :
+
+D'une part elle constitue un levier de détection car les SNP en fort LD avec les variants causaux constituent notre signal $S$. Cependant, cela induit également une forte redondance informationnelle. Plusieurs SNPs colinéaires portent la même information. La combinaison du LD et de la structure de population peut générer des signaux d'association erronés (faux positifs).
+
+### Hypothèses de modélisations 
+
+Nous modélisons donc le phénotype comme le résultat des trois composantes :  
+- La structure de population ($P$) : Différences génétiques globales entre bassins versants.
+- La parenté ($K$) : Ressemblance phénotypique entre individus apparentés.
+- Les effets des QTLs ($S$): signal biologique réellement lié à des régions fonctionelles du génomes en liens avec le phénotype.
+Ainsi : 
+$$Y=P+K+S$$
+Nous supposons que ces effets sont **idépendants** et nous cherchons à isoler S pour quantifier la variabilité expliquée par le génome.
+
+## Procédures de sélection de variables 
+
+### Modèle linéaire mixte simple (MLM)
+Le premier modèle utilisé est un modèle linéaire mixte classique (Q+K), qui corrige simultanément la structure de population via $P\beta$ et la parenté via $u$. Le modèle s’écrit :
+$$y = P\beta + S_i\alpha_i + u + \epsilon$$
+où : 
+$P\beta$ : effets fixes **population** (3 premières PCs de la matrice SNP)
+$S_i$: génotype du SNP testé $i$
+$\alpha_i$: : effet du $i^e$ SNP testé
+$\epsilon\sim{N(0,I\sigma_{e}^2)}$ : bruit résiduel
+Ici, $u\sim{N(0,K\sigma_{g}^2)}$ sont les effets aléatoires de **parenté**. 
+$K$ la matrice de parenté (fournie dans le jeu de données) est dérivée de tous les SNP via la formule de la kinship d'après Yang et al. (2011) : 
+$$K = \frac{ZZ^T}{N}$$
+avec Z la matrice centrée et réduite de la matrice de génotypes brutes ($0, 1, 2$) : 
+$$z_{ij} = \frac{x_{ij} - 2p_i}{\sqrt{2p_i(1 - p_i)}}$$
+
+
+### FarmCPU : Fixed and Random Model Circulating Probability Unification
+FarmCPU est un algorithme itératif de GWAS qui repose sur l’alternance de deux modèles complémentaires : un modèle à effets fixes (Fixed Effect Model, FEM) et un modèle à effets aléatoires (Random Effect Model, REM).
+
+Le rôle du modèle à effets fixes est d’estimer, à chaque itération, une statistique de test et une p-value associée à chaque SNP candidat, tout en contrôlant les effets de structure et les signaux génétiques déjà identifiés. Le modèle s’écrit :
+ $$y = P\beta + \underbrace{\sum_{m=1}^{k} S_m\alpha_m}_{\text{pseudo-QTNs}} + \underbrace{S_{i}\alpha_{i}}_{\text{SNP testé}} + \epsilon$$
+où $P\beta$ représente les effets fixes de population (ici les trois premières composantes principales de la matrice SNP), $S_m$ les pseudo-QTNs inclus comme cofacteurs à effets fixes, $S_i$ le SNP testé à l’itération courante, et $\epsilon$ le terme d’erreur résiduelle.
+
+Dans un second temps, le modèle à effets aléatoires intervient pour optimiser la sélection des pseudo-QTNs à inclure dans le FEM. À partir des SNPs présentant les p-values les plus significatives lors de l’itération précédente du FEM, FarmCPU identifie un sous-ensemble de marqueurs dont la structure de covariance maximise la vraisemblance du modèle mixte suivant :
+$$y = \mu + u + \epsilon$$
+avec $\mu$ l’effet fixe (intercept), $u$ un effet aléatoire tel que $u \sim N(0, K_{\text{pseudo}} \sigma_g^2)$, où $K_{\text{pseudo}}$ est une matrice de parenté construite uniquement à partir des pseudo-QTNs candidats, et $\sigma_g^2$ la variance génétique additive associée à ces marqueurs. Le terme $\epsilon$ représente le bruit résiduel.
+
+L’algorithme converge progressivement vers une sélection de pseudo-QTNs faiblement colinéaires, stables comme cofacteurs dans le FEM, et dont la structure de covariance explique au mieux le phénotype considéré au sens de la vraisemblance du modèle mixte. Lorsque la liste des pseudo-QTNs se stabilise, chaque SNP est testé individuellement dans le FEM et se voit attribuer une p-value issue d’un test de type $t$ conditionnellement aux cofacteurs retenus.
+
+Les pseudo-QTNs eux-mêmes ne sont pas testés simultanément avec les autres SNPs, puisqu’ils sont inclus comme covariables fixes. Leur p-value finale est obtenue par substitution, en retenant la valeur la plus significative observée pour chacun d’eux au cours des différents modèles ajustés lors de l’évaluation de l’ensemble des SNPs.
+
+
+### Procédure de selection de variable via RF
+Nous cherchons ici à développer une procédure de sélection de variables via un Random Forest (RF). Il s'agit sans aucun doute de la partie la plus expérimentale de notre analyse. L’objectif est de classer chaque SNP par ordre de score d’importance. Nous postulons que l’utilisation d’un RF permet d’identifier des interactions complexes (gène × gène) qui échappent aux modèles linéaires. Nous supposons donc que ces deux méthodes n’identifient pas le même signal génétique et que les deux méthodes ne sont pas redondantes.
+
+#### Correction de la structure
+
+Il est difficile d’intégrer explicitement la structure de population et la parenté comme cofacteurs afin de corriger leurs effets respectifs dans un modèle de type Random Forest. Pour contourner cette limitation, nous travaillons sur les résidus d’un modèle mixte de type Q+K, conceptuellement proche du MLM utilisé pour l’attribution des p-values aux SNPs, défini par :
+$$y = P\beta + u + \epsilon$$
+avec $u \sim N(0, K\sigma_{g}^2)$ l’effet aléatoire de parenté, où $K$ est la matrice de parenté dérivée de l’ensemble des SNPs, et $\epsilon \sim N(0, I\sigma_{e}^2)$ le bruit résiduel.
+
+La principale différence avec le MLM précédemment utilisé réside dans la définition des effets fixes de population. Ici, le terme $P\beta$ inclut à la fois les trois premières composantes principales issues de la matrice SNP et une variable catégorielle population correspondant aux onze bassins versants d’origine des individus :
+**Adour | Basento | Dranse | Kuhkopf | Loire | NL | Paglia | Ramieres | Rhin | Ticino | ValAllier**
+
+Cette divergence dans la définition des effets fixes entre le MLM et ce modèle mixte s’explique par deux raisons distinctes. Premièrement, une coordination imparfaite au sein du groupe de travail a conduit à des implémentations parallèles du MLM et de la procédure de sélection par Random Forest, sans harmonisation préalable des cofacteurs utilisés. Deuxièmement, la variable population explique une part substantielle de la variance phénotypique, comme le montrent les coefficients de détermination $R^2$ obtenus à partir de régressions linéaires simples de type phénotype ~ population. Malgré ces performances élevées obtenues avec la seule variable catégorielle, le maintien des premières composantes principales comme effets fixes est motivé par l’existence de métapopulations ancestrales chez le peuplier noir. Nous faisons l’hypothèse que les premières PCs issues des marqueurs génétiques capturent ces relations ancestrales entre populations.
+
+Il convient donc de garder à l’esprit que la procédure de sélection par Random Forest est appliquée à un phénotype corrigé selon une définition des effets fixes légèrement différente de celle utilisée dans les approches linéaires classiques.
+
+Une fois le modèle ajusté, nous extrayons les résidus déflatés afin d’ajuster les Random Forests :
+$$\hat{\epsilon} = y - (P\hat{\beta} + \hat{u})$$
+
+#### Implémentation de la procédure de sélection 
+Avant de détailler comment nous avons implémenté cette procédure de sélection de variable, nous allons revenir sur des aspects spécifiques aux données et aux randoms forests dont il faut tenir compte.
+
+L’un des biais majeurs identifiés par Strobl est la tendance des forêts aléatoires à favoriser les variables offrant le plus grand nombre de points de coupure (nombre de modalités). Dans notre étude, tous les SNPs sont codés de manière identique ($0, 1, 2$). Cette homogénéité garantit qu’aucun marqueur n’est favorisé par sa structure ; a priori, seule sa capacité intrinsèque à expliquer la variance du résidu phénotypique détermine son score.
+
+Un autre point à considérer concerne la dimensionalité des données génomiques. Avec environ 210 000 SNPs, une forêt aléatoire nécessiterait un nombre d’arbres démesuré pour garantir que chaque variable soit incluse au moins une fois dans un arbre. Pour pallier ce problème, nous avons mis en place un protocole d’échantillonnage itératif de SNPs. À chaque itération, nous retenons un sous-ensemble $\mathcal{X}_{m}$ de 5 000 variables :
+$$\mathcal{X}_{m} \subset \{S_1, \dots, S_{total}\} \quad \text{avec} \quad |\mathcal{X}_{m}| = 5\,000$$
+À ce stade, nous ne cherchons pas à optimiser le pouvoir prédictif de la RF, mais uniquement à en dériver un score d’importance robuste pour chaque SNP. Pour ce faire, nous implémentons une procédure de validation croisée en 5-folds afin d’évaluer l’importance de chaque SNP sélectionné dans différents contextes d’entraînement. Ainsi, sur les 4 folds d’entraînement, nous ajustons un ensemble de $B$ arbres de décision :
+$$\hat{\epsilon}_{i,m} = \frac{1}{B} \sum_{b=1}^{B} T_b(x_{i, \mathcal{X}_m})$$
+où $T_b$ représente un arbre individuel et $x_i$ les valeurs des SNPs de l’individu $i$ pour les colonnes sélectionnées.
+
+Toujours dans l’objectif de dériver un score d’importance robuste, nous fixons le nombre d’arbres $B$ à 2000. La taille minimale des feuilles est fixée à $1$. Enfin, le $m_{\text{try}}$, c’est-à-dire le nombre de SNPs candidats à chaque split, est fixé à 500. La forêt est volontairement très peu régularisée et explore intensivement l’espace des variables. Chaque arbre est profond et multiplie les opportunités de splits, ce qui augmente fortement la fréquence de sélection de chaque $SNP \subset \mathcal{X}_{m}$ comme variable de coupure dans les différents arbres.
+
+À chaque fold, nous calculons le score d’importance des SNPs :
+$$Score_j =\Delta I(S_j) = \sum_{n} [w_n \cdot \text{Var}(n) - (w_L \cdot \text{Var}(n_L) + w_R \cdot \text{Var}(n_R))]$$
+où $n$ correspond au nœud parent, c’est-à-dire le groupe d’individus juste avant la division par le SNP $j$, et $n_L$ et $n_R$ (Left et Right) aux deux sous-groupes créés après la division. 
+Les poids $w_n$, $w_L$ et $w_R$ correspondent à la proportion d’individus présents dans chaque nœud par rapport au nombre total d’individus $N$, avec :
+$$w_L = \frac{N_{individus\_dans\_n_L}}{N_{total}}, \quad w_R = \frac{N_{individus\_dans\_n_R}}{N_{total}}$$ 
+Nous retenons la version *corrected* du score d’importance, basée sur l’approche de Nembrini et al. 
+Pour le SNP $j$, ce score est défini comme : 
+$$Score_j = \Delta I(X_j)_{obs} - \Delta I(X_j)_{perm}$$ 
+
+Toutes les valeurs d’importances corrigées sont enregistrées à chaque fold et pour chaque SNP. Nous répétons le protocole d’échantillonnage avec remise de $\mathcal{X}_{m}$ 870 fois, de manière à ce que chaque SNP soit sélectionné en moyenne 20 fois. La combinaison de ce protocole et de la réalisation des folds sur des forêts profondes garantit que chaque SNP se voit attribuer de nombreux scores d’importance, dans des contextes individus (5-folds) × génomiques ($\mathcal{X}_{m}$) différents. 
+
+Ainsi, le score final $Score_{final}$ pour un SNP $j$ est la moyenne des scores obtenus sur l’ensemble des tâches : $$Score_{final}(S_j) = \frac{1}{N_j} \sum_{m: S_j \in \mathcal{X}_m} Score_{j,t}$$ 
+
+Il est intéressant de noter qu’avec cette procédure, $dim(\mathcal{X}_{m}) = 5\,000$ ne représente qu’environ 2 % du génome. Nous réduisons ainsi drastiquement la probabilité que plusieurs SNPs d’un même bloc de LD soient utilisés conjointement dans une forêt aléatoire. Le modèle devient alors aveugle à ces corrélations et attribue un score à chaque SNP de la région causale, plutôt que d’écraser les scores des SNPs voisins. Cette approche est à l’opposé de celle de FarmCPU, qui introduit des SNPs pseudo-QTN comme covariables à effets fixes afin de corriger explicitement les colinéarités entre variables.
+
+
+### Phénotype de contôle aléatoire
+
+Afin d’évaluer la robustesse des méthodes de sélection de SNPs et de prédiction génomique, nous avons généré un phénotype simulé .Ce trait nul permet de tester la sensibilité des modèles à la structure de population et d’évaluer leur capacité à ne pas détecter de faux signaux. Ce phénotype contrôle est simplement tirée dans une loi normale centrée réduite :
+
+$$y \sim \mathcal{N}(0, 1)$$
+
+
+## Évaluation des performances de prédiction génomique
+Pour chaque procédure de sélection, on définit d’abord le sous-ensemble $\mathcal{S}$ des $K$ marqueurs les plus significatifs, sur la base des p-values ou des scores d’importance obtenus via la procédure considérée :
+$$\mathcal{S} = \{ j \mid \text{rank}(\text{score}_{j}) \le K \}$$
+
+Ce sous-ensemble permet de construire la matrice de design restreinte, obtenue en concaténant les colonnes de génotypes sélectionnées :
+$$X^{(\mathcal{S})} = \left[ S_j \right]_{j \in \mathcal{S}} = [ S_{j_1}, S_{j_2}, \dots, S_{j_K} ]$$
+
+### Ridge regression
+Pour évaluer les performances de prédiction des différents sous-ensembles de variables $X^{(\mathcal{S})}$, nous ajustons des modèles de régression Ridge. Pour chaque sous-ensemble, une validation croisée imbriquée est réalisée.
+
+Un premier niveau de validation croisée interne à 5 folds permet d’optimiser l’hyperparamètre de régularisation $\lambda$ :
+$$\lambda^* = \arg \min_{\lambda} \text{MSE}_{CV}(\lambda)$$
+Les coefficients de la régression sont alors estimés selon :
+$$\hat{\beta} = \arg \min_{\beta} \left( \| y - X^{(\mathcal{S})}\beta \|^2_2 + \lambda^* \| \beta \|^2_2 \right)$$
+
+Ensuite, la performance prédictive est évaluée sur les folds externes, en effectuant 10 répétitions de 5 folds externes, à l’aide du coefficient de détermination :
+$$R^2_{pred} = 1 - \frac{\sum (y_{obs} - y_{pred})^2}{\sum (y_{obs} - \bar{y}_{obs})^2}$$
+Ainsi, pour chaque sous-ensemble $X^{(\mathcal{S})}$, nous obtenons 50 valeurs de $R^2_{\text{pred}}$.
+
+### Random Forest 
+
+Pour évaluer les performances de prédiction des différents sous-ensembles de variables $X^{(\mathcal{S})}$, nous ajustons également des modèles de forêts aléatoires de régression. Comme pour la régression Ridge, l’évaluation repose sur une procédure de validation croisée imbriquée, appliquée indépendamment à chaque sous-ensemble de variables.
+
+À l’intérieur de chaque fold externe, un premier niveau de validation croisée interne à 5 folds est utilisé afin d’optimiser les hyperparamètres du modèle Random Forest. L’optimisation porte sur le nombre d’arbres, le nombre de variables candidates à chaque division ($mtry$) et la taille minimale des feuilles terminales. Pour chaque combinaison d’hyperparamètres, l’erreur quadratique moyenne est estimée par validation croisée interne, et la combinaison optimale est sélectionnée selon :
+
+$$\theta^* = \arg\min_{\theta} \text{RMSE}_{CV}(\theta)$$
+où $\theta = (\text{num.trees}, \text{mtry}, \text{min.node.size})$ désigne le vecteur d’hyperparamètres du modèle.
+
+Le modèle Random Forest final est ensuite ajusté sur l’ensemble des données d’entraînement du fold externe, en utilisant les hyperparamètres optimaux $\theta^*$. Les prédictions sont alors obtenues sur le jeu de test associé à ce fold externe.
+
+La performance prédictive sont également évaluée à l’aide du coefficient de détermination.
+
+Cette procédure est répétée sur 5 folds externes, et l’ensemble du schéma est répliqué plusieurs fois afin de stabiliser les estimations. Ainsi, pour chaque sous-ensemble de variables $X^{(\mathcal{S})}$, nous obtenons une distribution de valeurs de $R^2_{\text{pred}}$
+
+## Etude de la divergence du signal par EMD 
+
+Afin de quantifier la similarité entre les SNPs retenus par les différentes procédures de sélection , nous avons utilisé la Distance de Wasserstein (ou Earth Mover’s Distance, EMD). 
+
+Pour ce faire, on considère un ensemble de points $I = \{1, \dots, n\}$ définissant l'espace de support, correspondant ici aux positions chromosomiques des marqueurs SNPs. Nous notons $u$ et $v$ les vecteurs de masses associés aux distributions discrètes $P$ et $Q$, tels que $\sum u_i = \sum v_j = 1$.
+La « masse » $w_i$ associée à chaque SNP $i$ est dérivée du score d'importance brut $S_i$. Selon la procédure de sélection, $S_i$ correspond soit à l'importance des variables pour la Random Forest, soit à la valeur de $-\log_{10}(P\text{-value})$ pour les modèles linéaires (MLM et FarmCPU). Afin de satisfaire les contraintes du transport optimal, ces scores sont normalisés pour former une distribution de probabilité discrète :
+
+$$w_i = \frac{|S_i|}{\sum_{j=1}^{n} |S_j|}$$
+
+La distance de Wasserstein de premier ordre ($W_1$) entre deux distributions $P$ et $Q$ est définie comme la solution du problème de transport optimal minimisant le coût total de transfert :
+$$W_1(u, v) = \min_{\Gamma \in \Pi(u, v)} \sum_{i=1}^{n} \sum_{j=1}^{n} \gamma_{ij} d_{ij}$$
+
+Où :$d_{ij}$ est la matrice de coût, représentant la distance (ou l'effort) pour déplacer une unité de masse du point $i$ vers le point $j$.
+$\gamma_{ij}$ est le plan de transport (la quantité de masse réellement déplacée de $i$ vers $j$).
+$\Pi(u, v)$ est l'ensemble des plans de transport admissibles respectant les contraintes de conservation de la masse.
+
+Une fois les distributions $u$ (procédure de sélection A) et $v$ (procédure de sélection B) obtenues et que nous avons défini la matrice de coût $d_{ij}$, nous pouvons calculer la distance de Wasserstein à l'aide du package "transport" (Schuhmacher et al., 2020).
+
+Contrairement aux mesures de divergence classiques (comme la distance Euclidienne) qui comparent les masses point par point ($u_i$ vs $v_i$), l'EMD exploite la structure de l'espace via $d_{ij}$.Si la masse se déplace vers un point voisin (où $d_{ij}$ est faible), la distance $W_1$ sera faible. Si la masse doit être transportée vers un point distant (où $d_{ij}$ est élevé), la distance $W_1$ augmente proportionnellement.
+
+L'intêret de cette approche réside dans le fait que l'on peut modifier la définition de la matrice de coût $d_{ij}$. Dans le cadre de cette étude, nous avons choisis de définir le coût de transport entre deux SNPs $i$ et $j$ comme une fonction de leur corrélation :
+$$d_{i,j} = 1 - r^2_{ij}$$
+
+où $r^2_{ij}$ désigne le coefficient de corrélation (au sens du déséquilibre de liaison) entre les deux loci. Ainsi, le coût de transport est nul lorsque deux SNPs sont parfaitement corrélés ($r^2_{ij} = 1$), même s’ils sont situés à des positions éloignées sur le chromosome. À l’inverse, le coût atteint sa valeur maximale ($d_{ij} = 1$) lorsque les loci sont statistiquement indépendants.
+
+Dans ce cadre, une valeur faible de l’EMD-LD suggère que, conditionnellement à la métrique de coût fondée sur le LD, les signaux identifiés par les deux procédures sont principalement supportés par des SNPs fortement corrélés, et donc redondants du point de vue de cette structure de dépendance.
+
+Dans cette étude, nous considérons le génome dans son ensemble afin de construire une matrice de coût globale $d_{ij}$. Cependant, le calcul de matrices de coût de taille $n \times n$ devenant rapidement lourd en mémoire lorsque $n$ est élevé, l’analyse est donc restreinte à un sous-ensemble de SNPs. Pour chaque paire de méthodes seuls les top $K$ SNPs identifiés par chacune des procédures de sélection sont conservés. L’espace de support est alors défini comme l’union de ces deux ensembles. Les distributions de poids associées à chaque méthode sont ensuite projetées sur ce support commun, avec un poids nul attribué aux SNPs absents du top $K$ d’une méthode donnée. Cela permet de comparer des sélections partiellement disjointes sur un espace identique.
+
+# Résultats 
+
+## Ridge Y ~ S (MLM & FarmCPU)
+
+Nous présentons ici les performances prédictives de modèles de régression Ridge construits à partir de trois procédures de sélection de marqueurs : une sélection aléatoire de SNPs, une sélection des $K$ marqueurs les plus significatifs selon FarmCPU, et selon le modèle linéaire mixte (MLM). 
+
+#### Phénotype nul de contrôle 
+![performances de prédictions Ridge phénotype aléatoire ~ S](Plot/Pheno_null_brut.png){ width=90% }
+
+Les sélections aléatoires ne présentent aucun pouvoir prédictif pour ce phénotype simulé, ce qui constitue le résultat attendu, puisqu’il n’existe a priori aucune structure commune entre ce trait artificiel et la structure des populations, la parenté ou tout autre facteur génétique latent.
+
+En revanche, les méthodes de sélection de variables basées sur le MLM et FarmCPU parviennent à isoler des sous-ensembles de SNPs présentant un pouvoir prédictif non nul. Ce résultat met en évidence une limite méthodologique majeure de notre procédure de sélection de variables. En effet, celle-ci est réalisée sur l’ensemble des individus, ce qui induit une fuite d’information entre les jeux d’entraînement et de test lors de l’évaluation du $R^2$. Afin de respecter strictement le cadre de la validation croisée en $K$-folds, la sélection de variables aurait dû être effectuée indépendamment au sein de chaque fold d’entraînement.
+
+Toutefois, pour des raisons de ressources computationnelles, ainsi qu’en raison de la perte de puissance statistique induite par le nombre limité d’individus disponibles, nous avons fait le choix de procéder à une sélection globale. Il convient donc de garder à l’esprit que les valeurs de $R^2$ rapportées ici sont vraisemblablement fortement surestimées du fait de ce biais.
+
+Il est tout de même intéressant de noter que ces procédures de sélection de variables parviennent à capturer, de manière fortuite, un signal structuré entre les SNPs et ce phénotype aléatoire. Cela illustre la puissance et la sensibilité de ces approches.
+
+#### Angle d'insertion des branches
+
+![performances de prédictions Ridge Angle insertion des branches ~ S](Plot/Angl_perf_brut.png){ width=90% }
+
+Les sélections aléatoires présentent un très faible pouvoir prédictif. Ce témoin négatif indique que les procédures de sélection basées sur FarmCPU et le MLM permettent bien d’identifier un signal génétique spécifique au trait, absent des ensembles aléatoires. Pour ce phénotype, il est intéressant de noter que la corrélation avec la structure de population est très faible : la régression linéaire $\text{BrAnglVert} \sim \text{PC1} + \text{PC2} + \text{PC3}$ conduit à un coefficient de détermination $R^2 = 0.048$. Ainsi, bien que les sélections aléatoires puissent capturer partiellement la structure de population et la parenté, elles conservent un pouvoir prédictif limité pour ce trait. 
+
+On observe également qu’une augmentation du nombre de variables entraîne une diminution des performances prédictives. Au-delà d’un certain seuil, le rapport signal/bruit devient défavorable et la pénalisation Ridge ne suffit plus à corriger l’overfitting. Ce résultat souligne l’intérêt d’une étape de sélection de variables en amont de la prédiction génomique.
+
+Le résultat le plus notable concerne FarmCPU. La régression Ridge construite à partir des 50 SNPs les plus significatifs identifiés par FarmCPU atteint un $R^2$ comparable (0.44 contre 0.47) à celui obtenu avec 5 000 SNPs sélectionnés via le MLM. Ce gain d’efficacité peut s’expliquer par l’introduction de pseudo-QTN comme cofacteurs à effets fixes dans le modèle FarmCPU, ce qui réduit fortement la colinéarité entre marqueurs, limite la redondance d’information et diminue le nombre de variables nécessaires à une prédiction performante.
+
+
+#### Circonférence 2009 
+
+![performances de prédictions Ridge circonférence 2009 ~ S](Plot/Circ_perf_brut.png){ width=90% }
+
+De manière cohérente avec les résultats précédents, l’augmentation du nombre de variables conduit à une dégradation des performances de prédiction, traduisant un échec de la régularisation Ridge lorsque le bruit domine le signal.
+
+Pour ce trait, les résultats obtenus avec les sélections aléatoires diffèrent nettement de ceux observés pour l’angle d’insertion des branches. Le pouvoir prédictif de ces sélections est élevé, avec des valeurs de $R^2$ de l’ordre de 0.4. Cette observation s’explique par la forte colinéarité entre le phénotype et la structure de population : la régression linéaire $\text{CIRC2009} \sim \text{PC1} + \text{PC2} + \text{PC3}$ présente un $R^2 = 0.43$. Les ensembles aléatoires de marqueurs capturent donc efficacement les composantes de structure de population et de parenté, qui agissent ici comme un proxy prédictif du phénotype, sans nécessairement refléter un lien causal avec celui-ci.
+
+Les procédures de sélection basées sur FarmCPU et le MLM obtiennent néanmoins des $R^2$ supérieurs à ceux des sélections aléatoires. On peut raisonnablement supposer que ce gain reflète l’identification d’un signal génétique plus spécifique, potentiellement localisé dans des régions fonctionnelles associées au trait. Toutefois, FarmCPU ne parvient pas à identifier un sous-ensemble restreint de marqueurs suffisamment informatifs pour ce phénotype. Deux hypothèses peuvent être avancées. D’une part, le trait pourrait être hautement polygénique, nécessitant la prise en compte d’un grand nombre de régions génomiques, et/ou résulter d’interactions complexes entre gènes que les modèles linéaires (GWAS et Ridge) ne parviennent pas à capturer. D’autre part, les composantes de structure de population, de parenté et le signal spécifique au trait pourraient être fortement colinéaires ( comme le suggèrent les performances élevées des sélections aléatoires) et la correction de $P$ et $K$ pourrait alors éliminer une partie du signal biologique d’intérêt.
+
+Ces premiers résultats permettent de discuter de ceux obtenus par A. Duplan. Ils montraient des performances prédictives similaires entre des sélections aléatoires et des sélections issues de MLMM, deux mécanismes principaux permettent d’expliquer ce paradoxe. Premièrement, de larges sous-ensembles aléatoires de SNPs peuvent atteindre de bonnes performances prédictives principalement parce qu’ils capturent efficacement la structure de population et la parenté, qui constituent un proxy puissant pour prédire le phénotype de certains traits. Deuxièmement, la sélection d’un sous-ensemble très large (34 000 SNPs) via plusieurs MLMM, présente deux limites majeures pour la prédiction : elle n’est pas spécifique au trait considéré, alors qu'on l'a vu, certains phénotypes reposent sur un signal concentré sur un nombre restreint de SNPs. Enfin, une telle selection accroît le risque d’overfitting, conduisant à des performances prédictives qui se limitent au niveau de la variance expliquée par la structure de population et la parenté.
+
+## Ridge Y ~ S procédure de sélection via Random Forest
+
+![Performances prédictives pour le phénotype simulé (sélection RF)](Plot/Null_perf_RF_brut.png){ width=90% }
+
+![Performances prédictives pour la circonférence en 2009 (sélection RF)](Plot/Circ_perf_rf_brut.png){ width=90% }
+
+
+Les figures ci dessus montrent que, pour ces deux phénotypes, la procédure de sélection de variables par forêts aléatoires (RF) conduit à des modèles de régression Ridge dont les performances prédictives sont systématiquement inférieures à celles obtenues à partir des sélections issues du MLM. Une tendance similaire est observée pour le phénotype angle d’insertion des branches, comme illustré par la figure suivante.
+
+![performances de prédictions pour le phénotype angle d'insertion des branches de la sélection via RF](Plot/Angl_perf_RF_brut.png){ width=90% }
+
+Il est néanmoins intéressant de noter que le nombre de variables optimal permettant de maximiser le $R^2$ est du même ordre de grandeur que celui observé avec la méthode MLM. Ce résultat était attendu compte tenu de la nature de la procédure de sélection par RF. En effet, à chaque itération, un sous-ensemble de variables de dimension $\dim(\mathcal{X}_m) = 5,000$ est échantillonné, ce qui ne représente qu’environ 2 % du génome. Cette stratégie réduit fortement la probabilité que plusieurs SNPs appartenant à un même bloc en déséquilibre de liaison soient utilisés conjointement au sein d’un même arbre.
+
+En conséquence, le modèle devient aveugle aux corrélations entre marqueurs ce qui ne permet pas de corriger efficacement la colinéarité entre variables. Cette limitation contraste avec l’approche FarmCPU, qui intègre explicitement des pseudo-QTN comme covariables à effets fixes, permettant ainsi de réduire la redondance d’information et d’atténuer les effets de colinéarité.
+
+
+
+## Colinéarité P/K/S 
+
+### Elimination d’une partie du signal biologique
+
+Les résultats précédents suggèrent une forte colinéarité entre les composantes de structure de population $P$, de parenté $K$ et le signal génétique spécifique au trait $S$. Cela soulève une question interessante : la correction simultanée de $P$ et $K$ dans les modèles linéaires mixtes peut-elle conduire à l’élimination d’une partie du signal biologique d’intérêt ?
+
+Dans ce contexte, nous avons également appliqué une procédure de sélection par forêts aléatoires (RF) directement sur le phénotype observé, c’est-à-dire sans correction préalable de la structure de population ni de la parenté. La comparaison des signaux capturés par ces différentes approches (FarmCPU, MLM et RF sur phénotype brut) a permis d’identifier un locus situé sur le chromosome 13, fortement associé au phénotype **Circonférence 2009**. Cette association est illustrée par la distribution des valeurs phénotypiques en fonction des génotypes à ce locus, présentée sur la Figure suivante.
+
+![Distribution du phénotype Circonférence 2009 en fonction des génotypes du SNP identifié](Plot/Box_chr13_circ.png){ width=50% }
+
+En revanche, les SNPs localisés dans cette région ne sont pas détectés par les procédures de sélection basées sur le MLM ou FarmCPU, comme l’illustrent les Manhattan plots restreints au chromosome 13.
+
+![Manhattan plots du chromosome 13 obtenus avec le MLM et FarmCPU](Plot/Manh_chr13.png){ width=80% }
+
+L’analyse des fréquences alléliques de ces SNPs dans les différentes populations révèle une structuration très marquée du variant. En particulier, dans la population Ticino, la quasi-totalité des individus porte l’allèle alternatif à l’état homozygote, tandis que cet allèle est quasiment absent dans plusieurs autres populations.
+
+![Fréquences alléliques du variant du chromosome 13 selon la population](Plot/freq_allel.png){ width=60% }
+
+Cette forte colinéarité avec la structure de population explique pourquoi ce locus est ignoré par les modèles MLM et FarmCPU, qui corrigent explicitement $P$ et $K$. Toutefois, la population Ticino présente également une circonférence moyenne en 2009 significativement plus élevée que celle des autres populations, comme le montre la distribution du phénotype par population : 
+
+![Distribution de la circonférence en 2009 selon la population](Plot/Ticino_circ.png){ width=70%}
+
+Ces observations soulèvent la question de savoir si la correction de la structure de population et de la parenté peut conduire à l’élimination de signaux biologiques réels, mais fortement structurés, résultant par exemple de processus d’adaptation locale. Afin de lever cette ambiguïté, nous suggérons de recourir à des approches de biologie computationnelle, notamment des analyses d’annotation fonctionnelle des régions génomiques identifiées, afin de déterminer si ce locus correspond à un variant biologiquement causal, confondu avec la structure de population, ou à un simple proxy non causal.
+
+### Ridge (Y-P-K) ~ S
+
+Même si une partie du signal peut être supprimée par la correction, celle-ci s’avère parfois incomplète. Cela est illustré par les performances prédictives élevées obtenues à partir de sélections aléatoires pour le trait Circonférence 2009, avec un $R^2$ d’environ 0.4. Ce résultat suggère que des ensembles aléatoires de marqueurs capturent efficacement la structure de population et la parenté, lesquelles agissent comme un proxy prédictif du phénotype.
+
+Afin d’évaluer la part de variance réellement indépendante de la structure et de la parenté, nous avons déflaté les phénotypes à l’aide d’un modèle mixte. L’objectif est d’évaluer les performances de prédiction des différentes sélections uniquement sur la variance résiduelle. Pour chaque phénotype, nous ajustons donc un modèle de type G-BLUP à l’aide de l’algorithme mmer du package sommer :
+
+$$y = X\beta + Zu + \epsilon$$
+
+Le terme $X\beta$ correspond aux effets fixes, ici les trois premières composantes principales issues de la matrice SNP. Le terme $Zu$ représente l’effet aléatoire polygénique, avec $u \sim \mathcal{N}(0, K\sigma_g^2)$. Enfin, $\epsilon$ désigne l’erreur résiduelle, avec $\epsilon \sim \mathcal{N}(0, I\sigma_e^2)$.
+
+Les résidus estimés, $\hat{e} = y - (X\hat{\beta} + Z\hat{u})$ représentent la part de la variation phénotypique non expliquée par la structure de population et la parenté. Les performances prédictives des différentes sélections sont alors évaluées par régression Ridge sur ces résidus, selon la procédure décrite précédemment.
+
+![Comparaison des R2 obtenus via ridge regression sur phénotype observé vs sur les résidus du modèle mixte pour le top 5000 SNPs de chaque procédure](Plot/Deflate_top_5000.png){ width=90% }
+
+![Comparaison des R2 obtenus via ridge regression sur phénotype observé vs sur les résidus du modèle mixte pour le top 50 SNPs de chaque procédure](Plot/Deflate_top_50.png){ width=90% }
+
+On observe que le pouvoir prédictif des sélections aléatoires chute à zéro lorsque l’on cherche à prédire les résidus. Cela confirme que la déflation a correctement éliminé l’information liée à la structure et à la parenté, et que les performances élevées observées précédemment étaient principalement dues à ces effets confondants.
+
+Quel que soit le nombre de SNPs considéré (top 5000 ou top 50), la proportion de variance résiduelle expliquée est systématiquement inférieure à la proportion de variance totale expliquée.
+
+Pour le trait Circonférence 2009, cette chute marquée du $R^2$ suggère que le signal capturé par les sélections est fortement colinéaire à la structure de population, laquelle agit comme un proxy prédictif lorsque le phénotype observé est utilisé. À l’inverse, pour l’Angle d’insertion des branches, la diminution du $R^2$ est plus modérée, cohérente avec une colinéarité plus faible entre ce phénotype et la structure.
+
+Un autre facteur explicatif réside dans un possible phénomène de sur-correction précedemment discuté. Lorsque le signal spécifique au trait $S$ est fortement lié à la structure de population $P$, la soustraction de l’effet de $P$ peut entraîner une perte partielle du signal biologique, affaiblissant ainsi la capacité prédictive des marqueurs sélectionnés.
+
+Dans l’ensemble, ces résultats illustrent la difficulté à quantifier précisément la part de variance phénotypique expliquée uniquement par le génome. Les effets de population et de parenté constituent des facteurs confondants majeurs, trés imbriqués avec le signal génétique que l'on cherche à isoler.
+
+Malgré des estimations de $R^2$ potentiellement biaisées, cette étude confirme que la composante génomique n’explique le plus souvent qu’une fraction limitée de la variabilité phénotypique observée.
+
+
+## Comparaison des performances des régressions : Ridge Y ~ S et Random forest 
+
+Nous proposons ici de comparer les performances de prédiction des différentes méthodes de régression mises en œuvre, à savoir la régression Ridge et la Random Forest. Les deux modèles ont été évalués selon des procédures identiques, telles que décrites dans la partie 2.3. Toutefois, pour des raisons de ressources computationnelles, l’évaluation a été réalisée avec seulement 5 folds externes. Nous ne disposons donc que de 5 valeurs de $R^2$, ce qui conduit à une estimation relativement bruitée des performances prédictives réelles. Il convient néanmoins de souligner que cette variabilité affecte de manière similaire la régression Ridge et la Random Forest ; les comparaisons relatives entre modèles demeurent ainsi informatives, même si les valeurs absolues doivent être interprétées avec prudence.
+
+Par ailleurs, toujours en raison de contraintes computationnelles, l’exploration de l’espace des hyperparamètres du modèle Random Forest est restée limitée. Nous nous sommes restreints à la grille d’hyperparamètres suivante :
+
+rf_grid <- data.table(
+  num.trees = c(200, 500),
+  mtry = c(10, 50),
+  min.node.size = c(5, 10)
+  
+Cela signifie que la RF testée n’est pas nécessairement proche de son optimum de généralisation même si explorer une grille d'hyper paramètres beaucoup plus étendu dans le contexte $P>>N$ améliorer rarement les performances de manière significative. 
+  
+La figure suivante présente les performances obtenues à partir de sous-ensembles de 5 000 SNPs, issus des différents top $K$ identifiés par les procédures de sélection considérées.
+
+![comparaison des R2 en fonction des modèles et des procédures de sélection pour le top 5000 SNPs](Plot/R2_RF_VS_RIDGE.png){ width=90% }
+
+
+La figure ci-dessus montre que, de manière générale, la régression par Random Forest présente des valeurs de $R^2$ inférieures à celles obtenues avec la régression Ridge. Cette observation reste valable lorsque l’évaluation est réalisée sur le sous-ensemble de SNPs identifié par la procédure de sélection via Random Forest elle-même. On aurait pu s’attendre à ce que cette approche permette de capturer des interactions complexes de type gène × gène, et que seule la Random Forest soit en mesure de modéliser efficacement ces effets non linéaires lors de la prédiction finale. Les résultats observés ne vont cependant pas dans ce sens, suggérant que ces interactions, si elles existent, contribuent faiblement à la variance prédictive dans ce cadre. 
+
+Dans la figure suivante, nous présentons les mêmes comparaisons, cette fois en considérant uniquement le top 100 SNPs retenus par les différentes procédures de sélection.
+
+
+![comparaison des R2 en fonction des différents modèles et des différentes procédures de sélection pour le top 100 SNPs de chaque procédure](Plot/R2_RF_VS_RIDGE_100.png){ width=90% }
+
+Dans ce cas, les différences de $R^2$ entre la régression Ridge et la Random Forest s’atténuent. Ce résultat peut s’expliquer par le fait que la régression Ridge bénéficie d’un mécanisme de régularisation efficace lorsque le nombre de variables augmente, lui permettant de limiter les effets d’overfitting. À l’inverse, la Random Forest semble échouer à extraire un signal stable dans un espace de variables trop vaste et redondant.
+ 
+ 
+## Évaluation de la divergence des sélections
+
+La mise en œuvre de deux approches méthodologiques distinctes — GWAS (MLM, FarmCPU) et Random Forest appliqué aux résidus — soulève la question de savoir si ces méthodes capturent ou non la même information biologique, potentiellement via des ensembles de marqueurs différents.
+
+Afin d’explorer cette question, nous avons mis en place plusieurs stratégies de comparaison entre les top SNPs identifiés par les différentes procédures de sélection.
+
+### Mesure du taux de chevauchement entre les Top K SNPs
+
+Dans un premier temps, nous avons évalué le chevauchement entre les « Top SNPs » sélectionnés par chaque méthode à l’aide du pourcentage de recouvrement. Cette mesure correspond à la proportion de SNPs communs entre deux sous-ensembles, en considérant uniquement leur présence ou absence, sans tenir compte de leur rang respectif au sein des listes de sélection.
+
+La figure suivante présente, pour les différentes procédures de sélection, le pourcentage de recouvrement du top 500 SNPs entre les différents phénotypes étudiés.
+
+![Chevauchement des tops 500 SNP entre les différents phénotypes](Plot/Overlap_pheno_V2.png)
+
+On observe que certains phénotypes ne partagent aucun SNP commun dans le top 500 identifié par l’ensemble des procédures. À l’inverse, les traits relatifs aux mensurations de l’arbre (circonférence, hauteur) présentent un recouvrement substantiel, suggérant l’existence de déterminants génétiques partagés. Biologiquement, ce résultat peut s’interpréter par l’action de facteurs de croissance communs influençant simultanément ces phénotypes. Toutefois, il pourrait également refléter la présence de signaux trans-phénotypiques liés à la structure de population. À ce stade, il n’est pas possible de trancher entre ces hypothèses sans recourir à des analyses d’annotation fonctionnelle ciblées sur les loci concernés 
+
+On notera que FarmCPU est la méthode qui minimise le plus le recouvrement entre phénotypes, ce qui suggère une meilleure capacité à isoler un signal spécifique à chaque trait.
+
+La figure suivante présente le taux de recouvrement du top 500 SNPs entre les différentes procédures de sélection, pour plusieurs phénotypes représentatifs.
+
+![Chevauchement des tops 500 SNP entre les différentes procédures de sélection](Plot/Overlap_BR_CIRC_null_V2.png)
+
+Pour le phénotype aléatoire, on observe un fort consensus entre FarmCPU et le MLM, avec un recouvrement de l’ordre de 89 %. À l’inverse, la sélection issue de la Random Forest apparaît plus divergente, avec un recouvrement d’environ 40 % seulement avec les approches linéaires. Une tendance similaire est observée pour le phénotype Circonférence 2009, bien que le consensus entre FarmCPU et le MLM soit moins marqué (environ 67 % de recouvrement).
+
+Les résultats sont en revanche très différents pour le phénotype Angle d’insertion des branches. Dans ce cas, le consensus s’inverse : FarmCPU identifie un ensemble de SNPs quasi disjoint de ceux sélectionnés par le MLM et la Random Forest, avec moins de 3 % de recouvrement. À l’inverse, la Random Forest et le MLM présentent un accord élevé, de l’ordre de 66 %. Ce résultat est à mettre en perspective avec les performances prédictives observées précédemment pour ce phénotype, pour lequel FarmCPU avait identifié un sous-ensemble très restreint de 50 SNPs permettant d’atteindre des performances comparables à celles obtenues avec 5000 SNPs sélectionnés via le MLM ou la Random Forest.
+
+FarmCPU réduit fortement la covariance entre SNPs en introduisant des pseudo-QTN comme cofacteurs à effets fixes dans le modèle. Il est donc plausible que cette méthode ait isolé un nombre très limité de SNPs réellement informatifs, tandis que les autres marqueurs, colinéaires ou n’expliquant aucune variance supplémentaire du phénotype, se voient attribuer des p-values négligeables. Dans ce cadre, FarmCPU pourrait effectivement sélectionner un unique représentant par région fonctionnelle.
+
+En se limitant à l’analyse du recouvrement entre top $K$, il n’est toutefois pas possible de déterminer si les SNPs identifiés par le MLM et la Random Forest sont en déséquilibre de liaison avec ceux sélectionnés par FarmCPU, c’est-à-dire s’ils correspondent aux mêmes régions fonctionnelles ou à des signaux fortement colinéaires.
+
+### Analyse de la distribution des scores par Earth Mover’s Distance (EMD)
+
+L’EMD, construite à partir d’une matrice de distance fondée sur la corrélation entre SNPs, ambitionne de répondre à cette question. Le tableau présenté ci-dessus rapporte les distances de Wasserstein entre les signaux identifiés par les différentes procédures de sélection, en considérant le top 5000 SNPs et un espace de support unique correspondant à l’ensemble du génome.
+
+Matrice des scores EMD-LD (Top 5000 SNPs)
+
+| Comparaison | Angle insertion | Circ 2009 | Phéno Aléatoire | Interprétation Globale |
+| :--- | :---: | :---: | :---: | :--- |
+| **FarmCPU vs MLM** | 0.63 | 0.05 | 0.02 | Divergence conditionnelle au succès FarmCPU |
+| **FarmCPU vs RF** | 0.74 | 0.31 | 0.28 | Faible consensus |
+| **MLM vs RF** | 0.17 | 0.28 | 0.27 | Faible consensus |
+
+Pour les phénotypes Circonférence 2009 et phénotype aléatoire, les valeurs très faibles de l’EMD entre FarmCPU et le MLM indiquent que les deux méthodes concentrent leur signal sur des SNPs très colinéaires ou appartenant aux mêmes blocs d’haplotypes. À l’inverse, pour le phénotype Angle d’insertion des branches, la valeur élevée de l’EMD suggère que les signaux capturés par FarmCPU et le MLM sont orthogonaux. FarmCPU semble ainsi extraire une information génomique distincte.
+
+La divergence relativement élevée entre les sélections issues de la Random Forest et celles des modèles linéaires peut refléter soit la capture de structures non linéaires spécifiques, soit l’intégration de composantes faiblement informatives. En l’absence de validation (boostrap ou autre), ces deux interprétations ne peuvent être départagées sur la seule base de ces résultats.
+
+Les distances de Wasserstein calculées sont conditionnelles à la définition de l’espace de support, lui-même dépendant du seuil K retenu pour chaque méthode. Les valeurs d’EMD doivent donc être interprétées de manière comparative et relative, et non comme des mesures absolues de divergence entre procédures. Etant donné que FarmCPU atteint un pouvoir prédictif équivalent avec 50 SNPs là où le MLM en requiert plusieurs milliers, le fait de considérer systématiquement le top 5000 SNPs pour toutes les méthodes peut biaiser l’EMD en diluant le signal spécifique de FarmCPU dans un ensemble de marqueurs peu informatifs. Afin de tester l’orthogonalité des signaux identifiés, nous proposons de définir l’espace de support comme l’union du top 50 FarmCPU et du top 5000 des autres procédures de sélection.
+
+
+Analyse de divergence par EMD-LD (Phénotype : Angle d'insertion)
+
+| Comparaison des méthodes | EMD-LD (Angle) | Interprétation |
+| :--- | :---: | :--- |
+| **FarmCPU (Top 50) vs MLM (Top 5000)** | 0.53 | Orthogonalité élevée des signaux |
+| **FarmCPU (Top 50) vs RF (Top 5000)** | 0.52 | Orthogonalité élevée des signaux |
+| **MLM (Top 5000) vs RF (Top 5000)** | 0.17 | Consensus |
+
+Les résultats montrent que la divergence persiste. Ce maintien des scores d'EMD-LD suggère que, dans l’espace induit par la matrice de coût basée sur le LD, les SNPs sélectionnés par FarmCPU sont faiblement connectés à ceux retenus par le MLM, suggérant une exploitation de composantes génomiques non colinéaires entre les deux approches. Cette capacité repose vraisemblablement sur l’algorithme itératif de FarmCPU, qui isole un sous-ensemble de marqueurs faiblement colinéaires dont la structure de covariance maximise la vraisemblance du modèle mixte :
+$$y = \mu + u + \epsilon$$
+avec $\mu$ l’effet fixe (intercept), $u$ un effet aléatoire tel que $u \sim N(0, K_{\text{pseudo}} \sigma_g^2)$, où $K_{\text{pseudo}}$ est une matrice de parenté construite uniquement à partir des pseudo-QTNs candidats. 
+
+Ces résultats suggèrent que, lorsque l’architecture génétique du phénotype comporte un nombre limité de loci faiblement colinéaires, l’algorithme itératif de FarmCPU tend à isoler un sous-ensemble de SNPs dont la structure de covariance diffère de celle exploitée par les autres approches. Cette propriété ne semble toutefois pas se généraliser aux phénotypes expliqués par un signal diffus (phénotype aléatoire) ou fortement confondu avec la structure de population (circonférence).
+
+
+# Conclusion
+
+L’efficacité des procédures de sélection dépend fortement de l’architecture génétique des traits. FarmCPU se révèle particulièrement performant pour des phénotypes simples, contrôlés par un nombre limité de loci à effets marqués et faiblement corrélés à la structure de population. Dans ce cadre, la méthode limite les faux négatifs et identifie un signal parcimonieux et non redondant, tout en conservant un bon pouvoir prédictif.
+
+À l’inverse, pour des traits adaptatifs ou génétiquement complexes, la correction conjointe de $P$ et $K$ peut conduire à l’élimination de variants causaux fortement structurés. L’identification de ces signaux nécessite alors des analyses complémentaires, notamment des annotations fonctionnelles de type Gene Ontology, afin de distinguer les effets biologiques réels des artefacts induits par la structure de population.
+
+Ces résultats illustrent plus généralement la difficulté à quantifier précisément la part de variance phénotypique expliquée uniquement par le génome. Les effets de population et de parenté constituent des facteurs confondants majeurs, étroitement imbriqués avec le signal génétique d’intérêt. Cela interroge l’usage du pouvoir prédictif comme outil pour quantifier la variance expliquée ou pour caractériser la structure d’un signal génétique complexe.
+
+Du point de vue de la prédiction pure, cette étude met néanmoins en évidence l’intérêt d’une étape de sélection de variables en amont de la prédiction génomique. Au-delà d’un certain seuil de marqueurs, le rapport signal sur bruit devient défavorable, et la pénalisation Ridge ne suffit plus à corriger l’overfitting, ce qui se traduit par une diminution des $R^2$.
+
+Enfin, même si les valeurs de $R^2$ sont partiellement biaisées, elles indiquent que la composante génomique n’explique le plus souvent qu’une fraction limitée de la variabilité phénotypique. Ces observations soulignent l’intérêt d’intégrer d’autres sources d’information, telles que des données multi-omiques ou environnementales, afin d’améliorer la compréhension des mécanismes biologiques et d’affiner les modèles prédictifs.
+
+\newpage
+
+![Annexe : sorties sommer pour les modèles mixtes (kinship en effet aléatoire et premières PC de la matrice SNPs en effets fixes)](Plot/Output_mixte_model.png)

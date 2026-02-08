@@ -30,7 +30,7 @@ load(config$data$localisation)
 load(config$data$kinship)
 ```
 
-## Simulation de Phenotypes 
+## Simulation de Phenotypes
 
 ```{r}
 ## Test phenotype null
@@ -41,6 +41,7 @@ load(config$data$kinship)
 # Phenotype$pheno_pop_aware <- pheno_null$pheno_pop_aware
 
 ```
+
 #### Preparation des data
 
 ```{r}
@@ -87,7 +88,7 @@ Phenotype$HT_struct_geo <-
 
 ```
 
-#### Phenotype mixte: lié à la population et à la localisation 
+#### Phenotype mixte: lié à la population et à la localisation
 
 ```{r}
 set.seed(123)

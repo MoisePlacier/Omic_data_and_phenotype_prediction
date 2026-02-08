@@ -33,7 +33,7 @@ Ce document présente les performances des modèles de prédiction (Ridge et Ran
 
 ```{r}
 # Chargement Phénotypes
-Pheno_FILE <- "data/pheno_null.rds"
+Pheno_FILE <- "data/LMM_Residuals_Kinship_PC_Pop.rds"
 pheno_dt <- as.data.table(readRDS(Pheno_FILE))
 
 
@@ -66,17 +66,12 @@ unique(all_scores_dt$phenotype)
 
 ```{r}
 
+#target_pheno <- c("pheno_null")
+#target_pheno <- c("CIRC2009")
 target_pheno <- c("BrAnglVert")
 y_list <- list()
 y_list[[target_pheno]] <- pheno_dt[[target_pheno]]
 
-# Grille d'hyperparamètres pour le Random Forest
-
-my_rf_grid <- data.table(
-  num.trees = 500,           
-  mtry = c(10, 50, 100, 500, 1000, 5000, 10000),     
-  min.node.size = c(1, 5)   
-)
 ```
 
 
@@ -85,11 +80,11 @@ my_rf_grid <- data.table(
 ```{r}
 
 results <- run_parallel_pipeline(
-  topK_vector      = c(10, 50, 100, 500, 1000, 5000, 10000), 
+  topK_vector      = c( 50, 500, 1000, 5000), 
   all_scores_dt    = all_scores_dt,       
   phenotypes       = target_pheno,
   methods          = c("FarmCPU", "MLM", "RF"),
-  contexts         = c("residuals","phenotype","GWAS","LMM_residuals"),
+  contexts         = c("phenotype","GWAS","LMM_residuals"),
   X_full           = X_matrix,
   y_full_list      = y_list,
   model_type       = "ridge",
@@ -102,38 +97,51 @@ results <- run_parallel_pipeline(
 )
 ```
 
+
 ```{r}
-results
+#saveRDS(results, file = "results/benchmarks/pheno_null_LMM_residuals_PC_pop.rds")
+#saveRDS(results, file = "results/benchmarks/CIRC2009_LMM_residuals_PC_pop.rds")
+#saveRDS(results, file = "results/benchmarks/BrAnglVert_LMM_residuals_PC_pop.rds")
+```
+
+
+```{r}
+
+F_circ_res <- c("results/benchmarks/CIRC2009_LMM_residuals_PC_pop.rds")
+Circ_res <- rbindlist(lapply(F_circ_res, readRDS), fill = TRUE)
+
+F_brAngl_res <- c("results/benchmarks/BrAnglVert_LMM_residuals_PC_pop.rds")
+brAngl_res <- rbindlist(lapply(F_brAngl_res, readRDS), fill = TRUE)
+
+F_null_res <- c("results/benchmarks/pheno_null_LMM_residuals_PC_pop.rds")
+null_res <- rbindlist(lapply(F_null_res, readRDS), fill = TRUE)
+
+
+F_circ <- c("results/benchmarks/CIRC2009_pheno_brut.rds")
+Circ <- rbindlist(lapply(F_circ, readRDS), fill = TRUE)
+
+F_brAngl <- c("results/benchmarks/BrAnglVert_pheno_brut.rds")
+brAngl <- rbindlist(lapply(F_brAngl, readRDS), fill = TRUE)
+
+F_null <- c("results/benchmarks/pheno_null_brut.rds")
+null <- rbindlist(lapply(F_null, readRDS), fill = TRUE)
 ```
 
 ```{r}
-saveRDS(results, file = "results/perf_BrAnglVert_pheno_brut.rds")
+null
 ```
 
 
-```{r}
-# 1. Créer le vecteur manuellement
-files <- c("results/perf_CIRC2009_pheno_brut.rds")
-
-# 2. Vérifier s'ils existent (sécurité)
-files <- files[file.exists(files)]
-
-all_results_merged <- rbindlist(lapply(files, readRDS), fill = TRUE)
-```
-
-```{r}
-all_results_merged
-```
 
 ```{r}
 
-plot_data <- copy(all_results_merged)
+plot_data <- copy(null)
 
 plot_data[method %like% "Random" | method == "random", `:=`(method = "Random", context = "Baseline")]
 
 plot_data[, method_clean := fcase(
   method == "Random", "Procédure de sélection :\naléatoire",
-  #method == "RF" & context == "phenotype", "Procédure de sélection :\nRF - phénotype observé",
+  method == "RF" & context == "phenotype", "Procédure de sélection :\nRF - phénotype observé",
   #method == "RF" & context == "residuals", "Procédure de sélection :\nRF - phénotype déflaté",
   method == "MLM", "Procédure de sélection :\nMLM",
   method == "FarmCPU", "Procédure de sélection :\nFarmCPU",
@@ -203,18 +211,25 @@ ggplot(plot_data, aes(x = topK_factor, y = R2, fill = label_run)) +
 ```
 
 
+# Plot pheno null 
+
+```{r}
+unique(Circ$method)
+unique(Circ$context)
+```
+
 ```{r}
 
-plot_data <- copy(results)
+plot_data <- copy(null)
 
 plot_data[method %like% "Random" | method == "random", `:=`(method = "Random", context = "Baseline")]
 
 plot_data[, method_clean := fcase(
   method == "Random", "Procédure de sélection :\naléatoire",
   #method == "RF" & context == "phenotype", "Procédure de sélection :\nRF - phénotype observé",
-  #method == "RF" & context == "residuals", "Procédure de sélection :\nRF - phénotype déflaté",
+  method == "RF" & context == "LMM_residuals", "Procédure de sélection :\nRF - sur résidus modèle mixte",
   method == "MLM", "Procédure de sélection :\nMLM",
-  method == "FarmCPU", "Procédure de sélection :\nFarmCPU",
+  #method == "FarmCPU", "Procédure de sélection :\nFarmCPU",
   default = NA_character_ 
 )]
 plot_data <- plot_data[!is.na(method_clean)]
@@ -223,7 +238,7 @@ plot_data <- plot_data[!is.na(method_clean)]
 methods_order <- c(
   "Procédure de sélection :\naléatoire",
   "Procédure de sélection :\nRF - phénotype observé",
-  "Procédure de sélection :\nRF - phénotype déflaté",
+  "Procédure de sélection :\nRF - sur résidus modèle mixte",
   "Procédure de sélection :\nMLM",
   "Procédure de sélection :\nFarmCPU"
 )
@@ -238,7 +253,7 @@ ggplot(plot_data, aes(x = topK_factor, y = R2, fill = label_run)) +
   geom_jitter(width = 0.15, alpha = 0.15, size = 0.3) +
   
   stat_summary(fun = median, geom = "text", aes(label = sprintf("%.2f", ..y..)), 
-               vjust = -6.5, size = 3, fontface = "bold") +
+               vjust = -5.5, size = 2.5, fontface = "bold") +
   
   stat_summary(fun = mean, geom = "line", aes(group = 1), color = "blue", size = 0.7) +
   
@@ -249,24 +264,18 @@ ggplot(plot_data, aes(x = topK_factor, y = R2, fill = label_run)) +
   
   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
   
-  # AJOUT DE LA LIGNE DE RÉFÉRENCE ROUGE
-  geom_hline(yintercept = 0.12, linetype = "solid", color = "red", size = 1) + 
-  
-  # OPTIONNEL : AJOUTER UNE ANNOTATION TEXTE POUR EXPLIQUER LA LIGNE
-  annotate("text", x = 1, y = 0.8, label = "Référence : R² = 0.12", 
-           color = "red", fontface = "bold", hjust = 0, size = 3,vjust = -5.5) +
+
   
   theme_minimal() +
   scale_fill_manual(values = c(
     "Procédure de sélection :\naléatoire" = "#999999",
     "Procédure de sélection :\nRF - phénotype observé" = "#E41A1C",
-    "Procédure de sélection :\nRF - phénotype déflaté" = "#FF7F00",
+    "Procédure de sélection :\nRF - sur résidus modèle mixte" = "#FF7F00",
     "Procédure de sélection :\nMLM" = "#377EB8",
     "Procédure de sélection :\nFarmCPU" = "#4DAF4A"
   )) +
   labs(
-    title = "Évaluation des performances de prédiction des modèles Ridge en fonction des procédures de sélection de variables",
-    subtitle = "Performances de prédiction (R²) pour la prédiction du trait : Angle insertion des branches",
+    title = "Ridge sur phénotype nul (tiré dans une loi normale)",
     x = "Nombre de marqueurs (Top K)",
     y = expression(bold(R^2) ~ "(validation croisée)")
   ) +
@@ -280,68 +289,198 @@ ggplot(plot_data, aes(x = topK_factor, y = R2, fill = label_run)) +
   )
 ```
 
+# Comparaison Ridge RF
 
+```{r}
+final_dt <- readRDS("~/Code/ACO-CODE_phenotypique /PoplarOmicsORL/Scripts/results/benchmarks/full_res_top100.rds")
 
-
-$$\text{soit V la matrice de variance - covariance pour un phénotype donné, alors on peut la décomposer ainsi : V} = K\sigma^2_g + I\sigma^2_\epsilon$$ 
-
-$$u \sim \mathcal{N}(0, K\sigma^2_g)$$
-algorithme REML (Restricted Maximum Likelihood) cherche les meilleures valeurs pour 
-$\sigma^2_g$
-
-et 
-
-$\sigma^2_\epsilon$ 
-
-par itération
+```
 
 
 
 ```{r}
-# Calcul de la limite supérieure pour le RMSE afin que les étiquettes ne sortent pas du cadre
-y_max_rmse <- max(plot_data$RMSE, na.rm = TRUE) * 1.1 
-
-ggplot(plot_data, aes(x = topK_factor, y = RMSE, fill = method)) +
-  facet_wrap(~label_run) + 
-  
-  geom_boxplot(alpha = 0.6, outlier.colour = "red", outlier.size = 0.5) +
-  geom_jitter(width = 0.1, alpha = 0.2, size = 0.5) +
-
-  # Affichage des médianes du RMSE
-  stat_summary(
-    fun = median, 
-    geom = "text", 
-    aes(label = sprintf("%.3f", ..y..)), 
-    vjust = -1.5,       # Ajusté pour le RMSE
-    size = 2.5,         
-    fontface = "bold"
-  ) +
-  
-  # Ligne de tendance de la moyenne
-  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "darkblue", size = 0.8) +
-  
-  # On enlève la ligne à 0 si elle gêne, ou on la garde comme référence plancher
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
-  
-  # On laisse l'axe Y s'ajuster aux données du phénotype
-  coord_cartesian(ylim = c(0, y_max_rmse)) +
-  
-  theme_minimal() +
-  scale_fill_brewer(palette = "Set2") + # Changement de couleur pour différencier du R2
-  labs(
-    title = paste("Analyse de l'Erreur (RMSE) - Phenotype:", target_pheno),
-    subtitle = "Plus la valeur est basse, meilleure est la précision. Valeurs : Médianes du RMSE.",
-    x = "Nombre de SNPs inclus (Top K)",
-    y = "RMSE (Root Mean Square Error)"
-  ) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(size = 9, face = "bold"),
-    legend.position = "bottom" # Remis la légende car c'est utile pour le RMSE
-  )
+unique(final_dt$context)
+unique(final_dt$method)
+unique(final_dt$phenotype)
 ```
 
 
+```{r}
+library(ggplot2)
+library(dplyr)
+library(forcats)
+
+# 1. Préparation des données
+df_plot <- final_dt %>%
+  # Création d'une étiquette propre pour l'axe X (Méthode x Contexte)
+  filter(context %in% c("LMM_residuals","GWAS")) %>%
+  filter(method %in% c("RF","FarmCPU","MLM")) %>%
+  filter(phenotype %in% c("BudFlushSlope","HT2009","Dia2015_sqrt","BrAnglVert","CIRC2011","CIRC2009","RamifSyllep","Rust","pheno_null" )) %>%
+  mutate(method_context = paste(method, context, sep = " - ")) %>%
+  # Optionnel : Renommer proprement ici si besoin
+  # mutate(method_context = fct_recode(method_context, "Nom Propre 1" = "Old_Method - Old_Context")) %>%
+  
+  # Forcer l'ordre des modèles (Ridge en haut, RF en bas)
+  mutate(model = factor(model, levels = c("ridge", "RF")))
+
+# 2. Création du graphique
+ggplot(df_plot, aes(x = method_context, y = R2, fill = method_context)) +
+  geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
+  scale_y_continuous(limits = c(0, 1))+
+  
+  # Facettage : lignes = model, colonnes = phenotype
+  facet_grid(model ~ phenotype) +
+  
+  # Ajout des médianes au-dessus des boxplots
+  stat_summary(
+    fun = median, 
+    geom = "text", 
+    aes(label = sprintf("%.2f", ..y..)),
+    vjust = -3.5, # Ajusté pour être juste au dessus
+    size = 2.5, 
+    fontface = "bold"
+  ) +
+  
+  # Cosmétique et labels
+  theme_bw() +
+  labs(
+    x = "Procédure de sélection",
+    y = expression(R^2 ~ "de prédiction (CV)"),
+    fill = "Configuration"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotation pour la lisibilité
+    legend.position = "bottom",
+    strip.background = element_rect(fill = "gray90"),
+    strip.text = element_text(face = "bold")
+  ) +
+  # Ajuster les limites de l'axe Y pour laisser de la place au texte des médianes
+  expand_limits(y = max(df_plot$R2) * 1.1)
+```
+
+
+
+# phénotype observé vs phénotype déflaté 
+
+
+
+
+```{r}
+
+iles_list <- list(
+  # Phénotypes déflatés (Résidus)
+  list(p = "results/benchmarks/CIRC2009_LMM_residuals_PC_pop.rds", t = "Circ.", c = "Déflaté"),
+  list(p = "results/benchmarks/BrAnglVert_LMM_residuals_PC_pop.rds", t = "Angle", c = "Déflaté"),
+  list(p = "results/benchmarks/pheno_null_LMM_residuals_PC_pop.rds", t = "Null", c = "Déflaté"),
+  # Phénotypes bruts
+  list(p = "results/benchmarks/CIRC2009_pheno_brut.rds", t = "Circ.", c = "Observé"),
+  list(p = "results/benchmarks/BrAnglVert_pheno_brut.rds", t = "Angle", c = "Observé"),
+  list(p = "results/benchmarks/pheno_null_brut.rds", t = "Null", c = "Observé")
+)
+
+plot_data[, method_clean := fcase(
+  # On split le Random selon le contexte pour éviter le mélange des 3600 runs
+  method %like% "Random" & context == "Déflaté", "Aléatoire (Déflaté)",
+  method %like% "Random" & context == "Observé", "Aléatoire (Observé)",
+  
+  method == "MLM" & context == "Déflaté",        "MLM (Déflaté)",
+  method == "MLM" & context == "Observé",        "MLM (Observé)",
+  
+  method == "FarmCPU" & context == "Déflaté",    "FarmCPU (Déflaté)",
+  method == "FarmCPU" & context == "Observé",    "FarmCPU (Observé)",
+  
+  default = NA_character_
+)]
+
+# --- 2. Filtrage et Top K ---
+K_selection <- c(50, 100, 500, 1000, 5000)
+plot_final <- plot_data[!is.na(method_clean) & topK %in% K_selection]
+
+trait_selection <- c("Circ.", "Angle")
+plot_final <- plot_final[ trait %in% trait_selection]
+
+
+method_selection <- c("Random",  "FarmCPU" ,"MLM"  )
+plot_final <- plot_final[ method %in% method_selection]
+
+# --- 3. Gestion des facteurs pour l'ordre d'affichage ---
+methods_order <- c(
+  "Aléatoire (Observé)", "Aléatoire (Déflaté)",
+  "MLM (Observé)",       "MLM (Déflaté)",
+  "FarmCPU (Observé)",   "FarmCPU (Déflaté)"
+)
+
+plot_final[, method_clean := factor(method_clean, levels = methods_order)]
+plot_final[, topK := factor(topK, levels = K_selection)]
+
+```
+
+```{r}
+unique(plot_final$method)
+```
+
+
+
+```{r}
+library(dplyr)
+# 1. Préparation du dataset pour le plot miroir
+df_mirror <- plot_final %>%
+  # On peut filtrer sur un Top K spécifique pour plus de clarté (ex: 5000 ou 50)
+  filter(topK == 50) %>% 
+  
+  # Organisation des lignes (Contextes) et colonnes (Traits)
+  mutate(
+    context = factor(context, levels = c("Observé", "Déflaté")),
+    trait = factor(trait, levels = c("Angle", "Circ.", "Null")) # Ajuste selon tes noms
+  )
+
+# 2. Création du graphique en miroir
+ggplot(df_mirror, aes(x = method, y = R2, fill = method)) +
+  # Boxplot épuré
+  geom_boxplot(alpha = 0.7, outlier.size = 0.5, width = 0.6) +
+  
+  # Le coeur de la demande : Lignes = Contexte, Colonnes = Phénotype
+  facet_grid(context ~ trait) +
+  
+  # Ajout des médianes
+  stat_summary(
+    fun = median, 
+    geom = "text", 
+    aes(label = sprintf("%.2f", ..y..)),
+    vjust = -3.5, 
+    size = 3, 
+    fontface = "bold"
+  ) +
+  
+  # Échelles et Couleurs
+  scale_y_continuous(limits = c(0, 1.1), breaks = seq(0, 1, 0.2)) +
+  scale_fill_manual(values = c(
+    "FarmCPU" = "#4DAF4A", 
+    "MLM" = "#377EB8", 
+    "Random" = "#999999"
+  )) +
+  
+  # Cosmétique académique
+  theme_bw() +
+  labs(
+    title = "Impact de la déflation de la structure de population (top 5000 SNPs de chaque procédure)",
+    subtitle = "Comparaison des R2 pour les prédictions des phénotypes observés (haut) vs résidus (bas)",
+    x = "Procédure de sélection",
+    y = expression(bold(R^2) ~ "de prédiction (CV)"),
+    fill = "Méthode"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",
+    strip.background = element_rect(fill = "gray90"),
+    strip.text = element_text(face = "bold", size = 10),
+    panel.spacing = unit(1, "lines")
+  )
+```
+
+```{r}
+unique(plot_data$phenotype) 
+```
 
 
 ## RF 
